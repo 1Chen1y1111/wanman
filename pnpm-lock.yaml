@@ -26,12 +26,12 @@ importers:
 
   packages/cli:
     dependencies:
+      '@sandbank.dev/boxlite':
+        specifier: ^0.3.4
+        version: 0.3.4(@sandbank.dev/relay@0.2.1)
       '@sandbank.dev/core':
         specifier: ^0.3.4
         version: 0.3.6(@sandbank.dev/relay@0.2.1)
-      '@sandbank.dev/daytona':
-        specifier: ^0.3.4
-        version: 0.3.4(@sandbank.dev/relay@0.2.1)
       '@wanman/core':
         specifier: workspace:*
         version: link:../core
@@ -570,6 +570,9 @@ packages:
   '@rolldown/pluginutils@1.0.0-rc.15':
     resolution: {integrity: sha512-UromN0peaE53IaBRe9W7CjrZgXl90fqGpK+mIZbA3qSTeYqg3pqpROBdIPvOG3F5ereDHNwoHBI2e50n1BDr1g==}
 
+  '@sandbank.dev/boxlite@0.3.4':
+    resolution: {integrity: sha512-mMq//lGD6zl/PbKmc3MaiJ/LP2+4iD0hHpFMZpmP0r9J+H4Qa5ztlyRcT69ypZasS54BFyAgtjksye9X28husw==}
+
   '@sandbank.dev/core@0.2.1':
     resolution: {integrity: sha512-g63h53/EU1nh1EhZUS4KbBoAvKKN5/1R9jguDDp3MBOa5QRuBXixaMJdi5RmjH5rRxYR5sogE9K8+L7kk7GySg==}
     peerDependencies:
@@ -584,14 +587,6 @@ packages:
       '@sandbank.dev/relay': ^0.2.1
     peerDependenciesMeta:
       '@sandbank.dev/relay':
-        optional: true
-
-  '@sandbank.dev/daytona@0.3.4':
-    resolution: {integrity: sha512-+YI9IC5ETTP4GNelnz4FbRueDLG4hNrwLSTjFHO/qHVuoRiLwzzl/vDGsPPtXjAeYaxaf0YglUtg71CU5aek2g==}
-    peerDependencies:
-      '@daytonaio/sdk': ^0.144.0
-    peerDependenciesMeta:
-      '@daytonaio/sdk':
         optional: true
 
   '@sandbank.dev/db9@0.2.0':
@@ -1482,6 +1477,12 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-rc.15': {}
 
+  '@sandbank.dev/boxlite@0.3.4(@sandbank.dev/relay@0.2.1)':
+    dependencies:
+      '@sandbank.dev/core': 0.3.6(@sandbank.dev/relay@0.2.1)
+    transitivePeerDependencies:
+      - '@sandbank.dev/relay'
+
   '@sandbank.dev/core@0.2.1(@sandbank.dev/relay@0.2.1)':
     optionalDependencies:
       '@sandbank.dev/relay': 0.2.1(@sandbank.dev/core@0.3.6)
@@ -1490,12 +1491,6 @@ snapshots:
   '@sandbank.dev/core@0.3.6(@sandbank.dev/relay@0.2.1)':
     optionalDependencies:
       '@sandbank.dev/relay': 0.2.1(@sandbank.dev/core@0.3.6)
-
-  '@sandbank.dev/daytona@0.3.4(@sandbank.dev/relay@0.2.1)':
-    dependencies:
-      '@sandbank.dev/core': 0.3.6(@sandbank.dev/relay@0.2.1)
-    transitivePeerDependencies:
-      - '@sandbank.dev/relay'
 
   '@sandbank.dev/db9@0.2.0(@sandbank.dev/relay@0.2.1)':
     dependencies:

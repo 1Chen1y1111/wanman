@@ -31,7 +31,7 @@ await build({
   },
   external: [
     '@sandbank.dev/core',
-    '@sandbank.dev/daytona',
+    '@sandbank.dev/boxlite',
   ],
 });
 
@@ -46,7 +46,7 @@ await build({
   outfile: 'dist/sdk.js',
   external: [
     '@sandbank.dev/core',
-    '@sandbank.dev/daytona',
+    '@sandbank.dev/boxlite',
   ],
 });
 

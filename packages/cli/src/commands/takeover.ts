@@ -4,18 +4,20 @@
  * This command intentionally stays thin:
  * - parse takeover-specific CLI args
  * - scan the project and build the initial agent config
- * - choose local vs sandbox execution backend
- * - delegate project analysis and orchestration details to dedicated modules
+ * - dispatch into the local supervisor path (the only path supported in OSS)
+ * - delegate project analysis details to dedicated modules
  */
 
 import * as fs from 'node:fs'
-import { execSync } from 'node:child_process'
-import type { AgentRuntime, TakeoverLaunchInputRecord, TakeoverRepoAuth } from '@wanman/core'
+import * as path from 'node:path'
+import type { AgentRuntime } from '@wanman/core'
 import {
   type GeneratedAgentConfig,
   type ProjectDocument,
   type ProjectIntent,
   type ProjectProfile,
+  SANDBOX_PROJECT_ROOT,
+  SANDBOX_WORKSPACE_ROOT,
   buildProjectIntent,
   collectProjectDocs,
   detectCI,
@@ -37,10 +39,14 @@ import {
   materializeLocalTakeoverProject,
   parseLocalGitStatus,
   planLocalDynamicClone,
+  runLocal,
 } from '../takeover-local.js'
-import { createEnvBackedWanmanHostSdk } from '../host-sdk.js'
-import { createCliLaunchSdk, resolveCliLaunchApiOptions } from '../launch-api-client.js'
-import { listUnsupportedRunControlPlaneFlags, parseOptions } from './run.js'
+import { buildTakeoverExecutionHooks } from '../takeover-hooks.js'
+import { resolveGithubToken } from './sandbox-git.js'
+import { runGoal } from '../run-host.js'
+import { generateBootstrapScript } from './runtime-bootstrap.js'
+import type { ProjectRunSpec } from '../execution-session.js'
+import { parseOptions } from './run.js'
 
 export type {
   GeneratedAgentConfig,
@@ -83,7 +89,6 @@ Options:
   --codex-effort <lvl>  Codex reasoning effort: low|medium|high|xhigh
   --codex-speed <lvl>   Alias for --codex-effort using fast|balanced|deep|max
   --github-token <tok>  GitHub token (default: GITHUB_TOKEN env or gh auth token)
-  --repo-auth <mode>    Remote repo access: public (default) or runner-env
   --local               Run locally without sandbox (supervisor in current env)
   --dry-run             Scan and generate takeover overlay without launching
   --infinite            Run in infinite mode (default: true)
@@ -100,7 +105,6 @@ function splitTakeoverArgs(args: string[]): {
   goalOverride?: string
   runtime: AgentRuntime
   githubToken?: string
-  repoAuth: TakeoverRepoAuth
   local: boolean
   dryRun: boolean
   runArgs: string[]
@@ -110,7 +114,6 @@ function splitTakeoverArgs(args: string[]): {
   let goalOverride: string | undefined
   let runtime: AgentRuntime = 'claude'
   let githubToken: string | undefined
-  let repoAuth: TakeoverRepoAuth = 'public'
   let local = false
   let dryRun = false
 
@@ -126,14 +129,6 @@ function splitTakeoverArgs(args: string[]): {
       case '--github-token':
         githubToken = args[++i]
         break
-      case '--repo-auth': {
-        const value = args[++i]?.trim().toLowerCase().replace('-', '_')
-        if (value !== 'public' && value !== 'runner_env') {
-          throw new Error(`Invalid --repo-auth value: ${args[i]}. Use public or runner-env.`)
-        }
-        repoAuth = value
-        break
-      }
       case '--local':
         local = true
         break
@@ -153,7 +148,7 @@ function splitTakeoverArgs(args: string[]): {
     }
   }
 
-  return { projectPath, goalOverride, runtime, githubToken, repoAuth, local, dryRun, runArgs }
+  return { projectPath, goalOverride, runtime, githubToken, local, dryRun, runArgs }
 }
 
 function hasExplicitRunMode(runArgs: string[]): boolean {
@@ -181,166 +176,74 @@ function printProjectSummary(profile: ProjectProfile, generated: GeneratedAgentC
   }
 }
 
-interface TakeoverGitContext {
-  activeBranch?: string
-  branchAhead: number
-  hasUpstream: boolean
-  modifiedFiles: string[]
-}
-
-function readTakeoverGitContext(projectPath: string): TakeoverGitContext {
-  try {
-    const raw = execSync('git status --porcelain=v2 --branch --untracked-files=all', {
-      cwd: projectPath,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const parsed = parseLocalGitStatus(raw)
-    return {
-      activeBranch: parsed.activeBranch,
-      branchAhead: parsed.branchAhead,
-      hasUpstream: parsed.hasUpstream,
-      modifiedFiles: parsed.modifiedFiles,
-    }
-  } catch {
-    return {
-      activeBranch: undefined,
-      branchAhead: 0,
-      hasUpstream: false,
-      modifiedFiles: [],
-    }
-  }
-}
-
-export function buildTakeoverLaunchInput(
-  profile: ProjectProfile,
-  runtime: AgentRuntime,
-  opts: ReturnType<typeof parseOptions>['opts'],
-  repoAuth: TakeoverRepoAuth,
-  goalOverride?: string,
-  repoRef?: string | null,
-): TakeoverLaunchInputRecord {
-  if (!profile.githubRemote) {
-    throw new Error('A GitHub remote is required to queue takeover through the control plane')
-  }
-
-  return {
-    repo_url: profile.githubRemote,
-    repo_ref: repoRef ?? null,
-    goal_override: goalOverride ?? null,
-    repo_auth: repoAuth,
-    mode: 'sandbox',
-    runtime,
-    loops: Number.isFinite(opts.loops) ? opts.loops : null,
-    infinite: opts.infinite,
-    poll_interval: opts.pollInterval,
-    keep: opts.keep,
-    enable_brain: !opts.noBrain,
-    output: opts.output,
-    codex_model: opts.codexModel ?? null,
-    codex_reasoning_effort: opts.codexReasoningEffort ?? null,
-  }
-}
-
-export function listUnsupportedTakeoverControlPlaneReasons(
-  profile: ProjectProfile,
-  opts: ReturnType<typeof parseOptions>['opts'],
-  git: TakeoverGitContext,
-  explicitGithubToken?: string,
-): string[] {
-  const reasons = [...listUnsupportedRunControlPlaneFlags(opts)]
-
-  if (!profile.githubRemote) reasons.push('missing GitHub remote')
-  if (git.modifiedFiles.length > 0) reasons.push('local uncommitted changes')
-  if (git.branchAhead > 0) reasons.push('local commits ahead of origin')
-  if (explicitGithubToken) reasons.push('--github-token')
-
-  return reasons
-}
-
-export async function queueTakeoverCommand(
-  profile: ProjectProfile,
-  runtime: AgentRuntime,
-  opts: ReturnType<typeof parseOptions>['opts'],
-  repoAuth: TakeoverRepoAuth,
-  goalOverride?: string,
-  explicitGithubToken?: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
-  const apiOptions = resolveCliLaunchApiOptions(env)
-  if (!apiOptions) return false
-
-  const git = readTakeoverGitContext(profile.path)
-  const reasons = listUnsupportedTakeoverControlPlaneReasons(profile, opts, git, explicitGithubToken)
-  if (reasons.length > 0) {
-    console.warn(
-      `Bypassing launch control plane for takeover because these conditions require direct host execution: ${reasons.join(', ')}`,
-    )
-    return false
-  }
-
-  const launch = await createCliLaunchSdk(apiOptions).createTakeoverLaunch(
-    buildTakeoverLaunchInput(profile, runtime, opts, repoAuth, goalOverride, git.activeBranch ?? null),
-  )
-  console.log(`Queued takeover launch ${launch.id} via control plane (${launch.status}).`)
-  console.log(`Use "wanman launch watch ${launch.id}" to follow execution.`)
-  return true
-}
-
 export async function takeoverCommand(args: string[]): Promise<void> {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(TAKEOVER_HELP)
     return
   }
 
-  const { projectPath, goalOverride, runtime, githubToken: explicitToken, repoAuth, local, dryRun, runArgs } = splitTakeoverArgs(args)
+  const { projectPath, goalOverride, runtime, githubToken: explicitToken, local, dryRun, runArgs } = splitTakeoverArgs(args)
   if (!fs.existsSync(projectPath)) {
     console.error(`Error: path does not exist: ${projectPath}`)
     process.exit(1)
   }
 
   console.log(`\n  Scanning ${projectPath}...`)
-  const previewProfile = scanProject(projectPath)
-  const previewGenerated = generateAgentConfig(previewProfile, goalOverride, runtime)
-  const previewGoal = previewGenerated.goal
+  const profile = scanProject(projectPath)
+  const generated = generateAgentConfig(profile, goalOverride, runtime)
+  const previewGoal = generated.goal
   const normalizedRunArgs = hasExplicitRunMode(runArgs) ? runArgs : ['--infinite', ...runArgs]
   const { opts } = parseOptions([previewGoal, ...normalizedRunArgs])
-  printProjectSummary(previewProfile, previewGenerated)
+  printProjectSummary(profile, generated)
 
-  if (!local && !dryRun) {
-    if (await queueTakeoverCommand(previewProfile, runtime, opts, repoAuth, goalOverride, explicitToken)) {
-      return
-    }
-  }
+  // Force infinite mode for takeover (parseOptions already sets loops=Infinity when --infinite)
+  opts.infinite = true
+  opts.loops = Infinity
 
-  const sdk = createEnvBackedWanmanHostSdk()
-  const launch = sdk.prepareTakeover({
-    projectPath,
-    goalOverride,
-    runtime,
-    githubToken: explicitToken,
-    local,
-    enableBrain: !opts.noBrain,
-  })
+  const overlayDir = local
+    ? materializeLocalTakeoverProject(profile, generated, { enableBrain: !opts.noBrain })
+    : materializeTakeoverProject(profile, generated, { enableBrain: !opts.noBrain })
+
+  const githubToken = profile.githubRemote ? resolveGithubToken(explicitToken) : undefined
+  const useGitClone = !!profile.githubRemote && !!githubToken
+  const bootstrapScript = local ? undefined : generateBootstrapScript(profile)
 
   console.log(`\n  Mode:    ${local ? 'local (no sandbox)' : 'sandbox'}`)
   console.log(`  Runtime: ${runtime}`)
-  console.log(`  Git:     ${local ? 'local repo' : launch.useGitClone ? `gh clone (${launch.profile.githubRemote})` : 'tar upload (no GitHub remote or token)'}`)
-  if (launch.bootstrapScript) {
-    console.log(`  Bootstrap: ${launch.bootstrapScript.slice(0, 100)}${launch.bootstrapScript.length > 100 ? '...' : ''}`)
+  console.log(`  Git:     ${local ? 'local repo' : useGitClone ? `gh clone (${profile.githubRemote})` : 'tar upload (no GitHub remote or token)'}`)
+  if (bootstrapScript) {
+    console.log(`  Bootstrap: ${bootstrapScript.slice(0, 100)}${bootstrapScript.length > 100 ? '...' : ''}`)
   }
-  console.log(`  Goal: ${launch.generated.goal}`)
+  console.log(`  Goal: ${generated.goal}`)
   console.log('\n  Agents:')
-  for (const agent of launch.generated.agents) {
+  for (const agent of generated.agents) {
     const status = agent.enabled ? '✅' : '❌'
     console.log(`    ${status} ${agent.name} (${agent.lifecycle}) - ${agent.reason}`)
   }
-  console.log(`\n  Overlay: ${launch.overlayDir}`)
+  console.log(`\n  Overlay: ${overlayDir}`)
 
   if (dryRun) {
-    console.log(`\n  Dry run complete. Generated takeover overlay at ${launch.overlayDir}`)
+    console.log(`\n  Dry run complete. Generated takeover overlay at ${overlayDir}`)
     return
   }
 
-  await sdk.executePreparedTakeover(launch, opts)
+  if (local) {
+    await runLocal(profile, generated, overlayDir, opts)
+    return
+  }
+
+  const runSpec: ProjectRunSpec = {
+    projectDir: overlayDir,
+    ...(useGitClone
+      ? { repoCloneUrl: profile.githubRemote, githubToken }
+      : { repoSourceDir: profile.path }),
+    sandboxRepoRoot: SANDBOX_PROJECT_ROOT,
+    workspaceRoot: SANDBOX_WORKSPACE_ROOT,
+    gitRoot: SANDBOX_PROJECT_ROOT,
+    bootstrapScript,
+    sourceLabel: `takeover (${path.basename(profile.path)})`,
+    hooks: buildTakeoverExecutionHooks(profile, generated.intent),
+  }
+
+  await runGoal(generated.goal, opts, runSpec)
 }

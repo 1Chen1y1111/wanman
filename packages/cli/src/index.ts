@@ -21,8 +21,6 @@ import { initiativeCommand } from './commands/initiative.js';
 import { capsuleCommand } from './commands/capsule.js';
 import { artifactCommand } from './commands/artifact.js';
 import { hypothesisCommand } from './commands/hypothesis.js';
-import { storyCommand } from './commands/story.js';
-import { launchCommand } from './commands/launch.js';
 
 export const HELP = `wanman — Agent Matrix CLI
 
@@ -53,16 +51,13 @@ Usage:
   wanman hypothesis create <title> [flags] Create a hypothesis
   wanman hypothesis list [--status s]      List hypotheses
   wanman hypothesis update <id> --status s Update hypothesis
-  wanman story <subcommand> [args]         Operate on web story runs via the API
-  wanman launch <subcommand> [args]        Operate on control-plane launches via the API
-  wanman launch-runner [options]          Consume queued control-plane launches
   wanman run <goal> [options]              Start agent matrix with a goal (host only)
+  wanman takeover <path> [options]         Take over an existing git repo (host only)
+  wanman watch                             Watch supervisor/runtime activity
+  wanman skill:check [path]                Validate skill command references
 
 Environment:
   WANMAN_URL          Supervisor URL (default: http://localhost:3120)
-  WANMAN_API_URL      Web/API base URL for "wanman story" and "wanman launch" commands
-  WANMAN_API_TOKEN    Bearer token for "wanman story" and "wanman launch" commands
-  WANMAN_RUNNER_SECRET Internal secret for "wanman launch-runner"
   WANMAN_AGENT_NAME   Current agent name (used as default sender/receiver)
 `;
 
@@ -100,25 +95,6 @@ export async function run(command: string | undefined, args: string[]): Promise<
       case 'hypothesis':
         await hypothesisCommand(args);
         break;
-      case 'story':
-        await storyCommand(args);
-        break;
-      case 'launch':
-        await launchCommand(args);
-        break;
-      case 'launch-runner': {
-        try {
-          const { launchRunnerCommand } = await import('./commands/launch-runner.js')
-          await launchRunnerCommand(args)
-        } catch (e) {
-          if (e instanceof Error && (e.message.includes('Cannot find module') || e.message.includes('ERR_MODULE_NOT_FOUND'))) {
-            console.error('"wanman launch-runner" is only available on the host machine, not inside a sandbox.')
-            process.exit(1)
-          }
-          throw e
-        }
-        break
-      }
       case 'run': {
         try {
           const { runCommand } = await import('./commands/run.js')

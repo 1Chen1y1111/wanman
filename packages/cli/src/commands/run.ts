@@ -1,8 +1,6 @@
 import { createDefaultRunOptions, type RunOptions } from '@wanman/host-sdk'
-import type { AgentRuntime, RunLaunchInputRecord } from '@wanman/core'
-import { createEnvBackedWanmanHostSdk } from '../host-sdk.js'
-import { createCliLaunchSdk, resolveCliLaunchApiOptions } from '../launch-api-client.js'
-import { detectProjectDir as detectRunProjectDir } from '../run-host.js'
+import type { AgentRuntime } from '@wanman/core'
+import { detectProjectDir as detectRunProjectDir, runGoal } from '../run-host.js'
 import {
   type ExecutionBackend,
   type ExecutionContext,
@@ -79,59 +77,6 @@ export function detectProjectDir(dir = process.cwd()): string | null {
   return detectRunProjectDir(dir)
 }
 
-export function buildRunLaunchInput(goal: string, opts: RunOptions): RunLaunchInputRecord {
-  return {
-    goal,
-    mode: 'sandbox',
-    runtime: opts.runtime,
-    loops: Number.isFinite(opts.loops) ? opts.loops : null,
-    infinite: opts.infinite,
-    poll_interval: opts.pollInterval,
-    keep: opts.keep,
-    no_brain: opts.noBrain,
-    output: opts.output,
-    codex_model: opts.codexModel ?? null,
-    codex_reasoning_effort: opts.codexReasoningEffort ?? null,
-  }
-}
-
-export function listUnsupportedRunControlPlaneFlags(opts: RunOptions): string[] {
-  const unsupported: string[] = []
-
-  if (opts.configPath) unsupported.push('--config')
-  if (opts.projectDir) unsupported.push('--project-dir')
-  if (opts.workerUrl) unsupported.push('--worker-url')
-  if (opts.workerModel) unsupported.push('--worker-model')
-  if (opts.workerKey !== 'lmstudio') unsupported.push('--worker-key')
-  if (opts.cloneFrom) unsupported.push('--clone-from')
-
-  return unsupported
-}
-
-export async function queueRunCommand(
-  goal: string,
-  opts: RunOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
-  if (opts.local) return false
-
-  const apiOptions = resolveCliLaunchApiOptions(env)
-  if (!apiOptions) return false
-
-  const unsupported = listUnsupportedRunControlPlaneFlags(opts)
-  if (unsupported.length > 0) {
-    console.warn(
-      `Bypassing launch control plane because these options require direct host execution: ${unsupported.join(', ')}`,
-    )
-    return false
-  }
-
-  const launch = await createCliLaunchSdk(apiOptions).createRunLaunch(buildRunLaunchInput(goal, opts))
-  console.log(`Queued run launch ${launch.id} via control plane (${launch.status}).`)
-  console.log(`Use "wanman launch watch ${launch.id}" to follow execution.`)
-  return true
-}
-
 const RUN_HELP = `wanman run — Goal-Driven Agent Runner
 
 Usage:
@@ -167,19 +112,16 @@ Project directory structure:
   products.json              Product catalog (optional)
 
 Environment:
-  WANMAN_API_URL        Queue sandbox runs through the launch control plane
-  WANMAN_API_TOKEN      Bearer token for the launch control plane
-  SANDBANK_URL          Sandbank Cloud URL
-  SANDBANK_API_KEY      Sandbank Cloud API key
+  SANDBANK_URL          Sandbank URL (e.g. http://localhost:3140)
+  SANDBANK_API_KEY      Sandbank API key
   SANDBANK_CLONE_FROM   Box ID to clone from
-  DAYTONA_API_KEY       Daytona cloud provider
   DB9_TOKEN             db9 API token for brain
   ANTHROPIC_BASE_URL    Override CEO LLM endpoint
   WANMAN_RUNTIME        Override agent runtime (claude or codex)
 `
 
 export async function runWithGoal(goal: string, opts: RunOptions, spec: ProjectRunSpec = {}): Promise<void> {
-  await createEnvBackedWanmanHostSdk().run(goal, opts, spec)
+  await runGoal(goal, opts, spec)
 }
 
 export async function runCommand(args: string[]): Promise<void> {
@@ -189,6 +131,5 @@ export async function runCommand(args: string[]): Promise<void> {
   }
 
   const { goal, opts } = parseOptions(args)
-  if (await queueRunCommand(goal, opts)) return
   await runWithGoal(goal, opts)
 }

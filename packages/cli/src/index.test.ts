@@ -10,9 +10,6 @@ vi.mock('./commands/recv.js', () => ({ recvCommand: vi.fn() }));
 vi.mock('./commands/agents.js', () => ({ agentsCommand: vi.fn() }));
 vi.mock('./commands/context.js', () => ({ contextCommand: vi.fn() }));
 vi.mock('./commands/escalate.js', () => ({ escalateCommand: vi.fn() }));
-vi.mock('./commands/story.js', () => ({ storyCommand: vi.fn() }));
-vi.mock('./commands/launch.js', () => ({ launchCommand: vi.fn() }));
-vi.mock('./commands/launch-runner.js', () => ({ launchRunnerCommand: vi.fn() }));
 
 import { run, HELP } from './index.js';
 import { sendCommand } from './commands/send.js';
@@ -20,18 +17,12 @@ import { recvCommand } from './commands/recv.js';
 import { agentsCommand } from './commands/agents.js';
 import { contextCommand } from './commands/context.js';
 import { escalateCommand } from './commands/escalate.js';
-import { storyCommand } from './commands/story.js';
-import { launchCommand } from './commands/launch.js';
-import { launchRunnerCommand } from './commands/launch-runner.js';
 
 const mockSend = vi.mocked(sendCommand);
 const mockRecv = vi.mocked(recvCommand);
 const mockAgents = vi.mocked(agentsCommand);
 const mockContext = vi.mocked(contextCommand);
 const mockEscalate = vi.mocked(escalateCommand);
-const mockStory = vi.mocked(storyCommand);
-const mockLaunch = vi.mocked(launchCommand);
-const mockLaunchRunner = vi.mocked(launchRunnerCommand);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,21 +58,6 @@ describe('command routing', () => {
     await run('escalate', ['urgent', 'problem']);
     expect(mockEscalate).toHaveBeenCalledWith(['urgent', 'problem']);
   });
-
-  it('routes "story" to storyCommand', async () => {
-    await run('story', ['list']);
-    expect(mockStory).toHaveBeenCalledWith(['list']);
-  });
-
-  it('routes "launch" to launchCommand', async () => {
-    await run('launch', ['list']);
-    expect(mockLaunch).toHaveBeenCalledWith(['list']);
-  });
-
-  it('routes "launch-runner" to launchRunnerCommand', async () => {
-    await run('launch-runner', ['--once']);
-    expect(mockLaunchRunner).toHaveBeenCalledWith(['--once']);
-  });
 });
 
 describe('help output', () => {
@@ -103,6 +79,15 @@ describe('help output', () => {
   it('shows help when no command is given', async () => {
     await run(undefined, []);
     expect(console.log).toHaveBeenCalledWith(HELP);
+  });
+
+  it('omits removed SaaS commands from HELP', () => {
+    expect(HELP).not.toContain('wanman story');
+    expect(HELP).not.toContain('wanman launch');
+    expect(HELP).not.toContain('launch-runner');
+    expect(HELP).not.toContain('WANMAN_API_URL');
+    expect(HELP).not.toContain('WANMAN_API_TOKEN');
+    expect(HELP).not.toContain('WANMAN_RUNNER_SECRET');
   });
 });
 

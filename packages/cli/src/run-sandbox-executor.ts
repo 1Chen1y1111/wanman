@@ -1,11 +1,9 @@
 import { createProvider } from '@sandbank.dev/core'
 import type { Sandbox, SandboxProvider } from '@sandbank.dev/core'
-import { resolveSandbankCloudConfig } from '@wanman/host-sdk'
 import { createSandboxExecutionBackend, type ExecutionBackend } from './execution-backend.js'
 import type { ExecutionHooks, ProjectRunSpec, RunOptions } from './execution-session.js'
 import type { RuntimeClient } from './runtime-client.js'
 import { createSandboxRuntimeClient } from './runtime-client.js'
-import { SandbankCloudAdapter } from './sandbank-cloud.js'
 
 export interface SandboxRunObservationParams {
   backend: ExecutionBackend
@@ -63,22 +61,12 @@ export async function runSandboxExecution(params: SandboxRunExecutorParams): Pro
   const hostEnv = params.hostEnv ?? process.env
 
   console.log('  [2/6] Creating sandbox...')
-  const { provider, providerType, cloudAdapter } = await resolveSandboxProvider(hostEnv)
+  const { provider, providerType } = await resolveSandboxProvider(hostEnv)
   console.log(`  Provider: ${providerType}`)
 
   const image = 'codebox'
-  const cloneFrom = opts.cloneFrom || hostEnv['SANDBANK_CLONE_FROM']
-  let sandbox: Sandbox
-
-  if (cloneFrom && cloudAdapter) {
-    console.log(`  Cloning box ${cloneFrom}...`)
-    const cloned = await cloudAdapter.cloneSandbox(cloneFrom)
-    sandbox = await provider.get(cloned.id)
-    await sandbox.writeFile('/opt/wanman/env', serializeShellExports(sandboxEnv))
-  } else {
-    sandbox = await provider.create({ image, env: sandboxEnv, resources: { disk: 5 }, timeout: 120 })
-  }
-  console.log(`  Sandbox: ${sandbox.id} (${cloneFrom ? 'cloned' : image})`)
+  const sandbox = await provider.create({ image, env: sandboxEnv, resources: { disk: 5 }, timeout: 120 })
+  console.log(`  Sandbox: ${sandbox.id} (${image})`)
 
   const runtime = createSandboxRuntimeClient(sandbox)
   const backend = createSandboxExecutionBackend(sandbox, runtime)
@@ -154,12 +142,6 @@ export async function runSandboxExecution(params: SandboxRunExecutorParams): Pro
   }
 }
 
-function serializeShellExports(env: Record<string, string>): string {
-  return Object.entries(env)
-    .map(([key, value]) => `export ${key}='${value.replace(/'/g, "'\\''")}'`)
-    .join('\n')
-}
-
 async function prepareSandboxUserHome(sandbox: Sandbox, workspaceRoot: string): Promise<void> {
   await sandbox.exec('useradd -m -s /bin/bash wanman 2>/dev/null || true')
   const home = (await sandbox.exec('echo $HOME')).stdout.trim() || '/root'
@@ -199,37 +181,32 @@ async function prepareSandboxUserHome(sandbox: Sandbox, workspaceRoot: string): 
 async function resolveSandboxProvider(env: NodeJS.ProcessEnv): Promise<{
   provider: SandboxProvider
   providerType: string
-  cloudAdapter?: SandbankCloudAdapter
 }> {
-  const sandbank = resolveSandbankCloudConfig(env)
+  const { BoxLiteAdapter } = await import('@sandbank.dev/boxlite')
 
-  if (sandbank) {
-    const cloudAdapter = new SandbankCloudAdapter({
-      apiUrl: sandbank.apiUrl,
-      apiKey: sandbank.apiKey ?? '',
-      image: sandbank.image,
-    })
-    return {
-      provider: createProvider(cloudAdapter),
-      providerType: `sandbank-cloud (${sandbank.apiUrl})`,
-      cloudAdapter,
-    }
-  }
-
-  if (env['DAYTONA_API_KEY']) {
-    const { DaytonaAdapter } = await import('@sandbank.dev/daytona')
-    const adapter = new DaytonaAdapter({
-      apiKey: env['DAYTONA_API_KEY'],
-      apiUrl: env['DAYTONA_API_URL'],
+  const apiUrl = env['BOXLITE_API_URL'] ?? env['SANDBANK_URL']
+  if (apiUrl) {
+    const adapter = new BoxLiteAdapter({
+      mode: 'remote',
+      apiUrl,
+      prefix: env['BOXLITE_PREFIX'],
+      apiToken: env['BOXLITE_API_TOKEN'] ?? env['SANDBANK_API_KEY'],
+      clientId: env['BOXLITE_CLIENT_ID'],
+      clientSecret: env['BOXLITE_CLIENT_SECRET'],
     })
     return {
       provider: createProvider(adapter),
-      providerType: 'daytona',
+      providerType: `boxlite remote (${apiUrl})`,
     }
   }
 
-  throw new Error(
-    'No sandbox provider configured.\n'
-    + 'Set SANDBANK_URL (e.g. http://localhost:3140) or DAYTONA_API_KEY.',
-  )
+  const adapter = new BoxLiteAdapter({
+    mode: 'local',
+    pythonPath: env['BOXLITE_PYTHON'],
+    boxliteHome: env['BOXLITE_HOME'],
+  })
+  return {
+    provider: createProvider(adapter),
+    providerType: 'boxlite local (Python SDK)',
+  }
 }

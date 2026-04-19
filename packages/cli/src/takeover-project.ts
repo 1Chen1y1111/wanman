@@ -3,11 +3,55 @@ import * as path from 'node:path'
 import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import {
-  PRODUCTION_AGENTS,
   type AgentDefinition,
   type AgentMatrixConfig,
   type AgentRuntime,
 } from '@wanman/core'
+
+// Minimal local templates for the OSS takeover flow. The upstream CLI used a
+// richer PRODUCTION_AGENTS registry, but the open-source surface keeps only the
+// generic agent definitions and relies on `renderAgentInstructions` for the
+// per-role AGENT.md content. Each template here is a short one-liner that is
+// prefixed to the generated takeover prompt; the detailed operating guide
+// lives in the AGENT.md file written to the overlay directory.
+const TAKEOVER_AGENT_TEMPLATES: AgentDefinition[] = [
+  {
+    name: 'ceo',
+    lifecycle: '24/7',
+    model: 'claude-opus-4-6',
+    systemPrompt: 'You are the CEO agent. Decompose the mission into initiatives, tasks, and change capsules; keep the backlog flowing. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+  {
+    name: 'cto',
+    lifecycle: 'on-demand',
+    model: 'claude-opus-4-6',
+    systemPrompt: 'You are the CTO agent. Gate code quality: review PRs, enforce the coverage gate, merge when ready. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+  {
+    name: 'dev',
+    lifecycle: 'on-demand',
+    model: 'claude-opus-4-6',
+    systemPrompt: 'You are a Dev agent. Implement assigned tasks end-to-end with tests and PRs, staying inside the capsule allowed paths. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+  {
+    name: 'devops',
+    lifecycle: '24/7',
+    model: 'claude-sonnet-4-6',
+    systemPrompt: 'You are the DevOps agent. Keep CI, build, and release pipelines healthy. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+  {
+    name: 'feedback',
+    lifecycle: '24/7',
+    model: 'claude-sonnet-4-6',
+    systemPrompt: 'You are the Feedback agent. Convert external signals (issues, TODOs, roadmap docs) into actionable tasks. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+  {
+    name: 'marketing',
+    lifecycle: '24/7',
+    model: 'claude-sonnet-4-6',
+    systemPrompt: 'You are the Marketing agent. Maintain README/docs/external narrative in sync with implementation changes. Read CLAUDE.md for the per-project operating guide before acting.',
+  },
+]
 
 export interface ProjectProfile {
   path: string
@@ -81,7 +125,7 @@ export interface WriteTakeoverOverlayOptions {
   port?: number
 }
 
-const BASE_AGENT_MAP = new Map(PRODUCTION_AGENTS.map(agent => [agent.name, agent] satisfies [string, AgentDefinition]))
+const BASE_AGENT_MAP = new Map(TAKEOVER_AGENT_TEMPLATES.map(agent => [agent.name, agent] satisfies [string, AgentDefinition]))
 
 const RUNTIME_MODELS: Record<AgentRuntime, { high: string; standard: string }> = {
   claude: { high: 'claude-opus-4-6', standard: 'claude-sonnet-4-6' },
