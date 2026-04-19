@@ -34,7 +34,15 @@ interface Db9Module {
 let cachedDb9Module: Promise<Db9Module> | null = null
 
 async function loadDb9Module(): Promise<Db9Module> {
-  cachedDb9Module ??= import('@sandbank.dev/db9') as Promise<Db9Module>
+  cachedDb9Module ??= (async () => {
+    try {
+      return (await import('@sandbank.dev/db9')) as Db9Module
+    } catch {
+      throw new Error(
+        '`@sandbank.dev/db9` is not installed. Either install it as an optional dependency (pnpm add @sandbank.dev/db9) or run with the cloud brain disabled (--no-brain).',
+      )
+    }
+  })()
   return cachedDb9Module
 }
 

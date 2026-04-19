@@ -88,9 +88,6 @@ importers:
       '@sandbank.dev/core':
         specifier: ^0.3.5
         version: 0.3.6(@sandbank.dev/relay@0.2.1)
-      '@sandbank.dev/db9':
-        specifier: ^0.2.0
-        version: 0.2.0(@sandbank.dev/relay@0.2.1)
       '@sandbank.dev/relay':
         specifier: ^0.2.1
         version: 0.2.1(@sandbank.dev/core@0.3.6)
@@ -103,6 +100,10 @@ importers:
       ws:
         specifier: ^8.19.0
         version: 8.20.0
+    optionalDependencies:
+      '@sandbank.dev/db9':
+        specifier: ^0.2.0
+        version: 0.2.0(@sandbank.dev/relay@0.2.1)
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.12
@@ -1484,6 +1485,7 @@ snapshots:
   '@sandbank.dev/core@0.2.1(@sandbank.dev/relay@0.2.1)':
     optionalDependencies:
       '@sandbank.dev/relay': 0.2.1(@sandbank.dev/core@0.3.6)
+    optional: true
 
   '@sandbank.dev/core@0.3.6(@sandbank.dev/relay@0.2.1)':
     optionalDependencies:
@@ -1500,6 +1502,7 @@ snapshots:
       '@sandbank.dev/core': 0.2.1(@sandbank.dev/relay@0.2.1)
     transitivePeerDependencies:
       - '@sandbank.dev/relay'
+    optional: true
 
   '@sandbank.dev/relay@0.2.1(@sandbank.dev/core@0.3.6)':
     dependencies:
