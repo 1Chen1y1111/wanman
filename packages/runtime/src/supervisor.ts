@@ -10,6 +10,7 @@
  */
 
 import { execSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -732,7 +733,16 @@ ${activePaths}`;
     const agentUser = process.env['WANMAN_AGENT_USER']
     const baseHome = agentUser ? `/home/${agentUser}` : (process.env['HOME'] || '/root')
     const runId = this._eventBus?.runId ?? 'unknown'
-    const homesRoot = path.join(os.tmpdir(), 'wanman-agent-homes', runId)
+    // Include pid + per-instance random suffix so parallel supervisors (e.g.
+    // vitest file-level parallelism) never share a homesRoot. Without this,
+    // two test files that start a Supervisor in the same millisecond collide
+    // on `/tmp/wanman-agent-homes/<runId>/__startup_probe__/.claude/...` and
+    // fail with EEXIST when the probe symlinks are rebuilt.
+    const homesRoot = path.join(
+      os.tmpdir(),
+      'wanman-agent-homes',
+      `${runId}-p${process.pid}-${randomUUID().slice(0, 8)}`,
+    )
     this._agentHomeManager = new AgentHomeManager(baseHome, homesRoot)
     this.verifySkillRuntime()
 
