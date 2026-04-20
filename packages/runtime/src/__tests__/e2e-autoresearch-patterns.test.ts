@@ -108,7 +108,12 @@ const mockBrain = { isInitialized: true, executeSQL: vi.fn(async (sql: string) =
 
 // ── Tests ──
 
-describe('CEO CLAUDE.md autonomy guarantee', () => {
+// Skipped in OSS: the CEO agent and its CLAUDE.md shipped inside @wanman/core
+// were SaaS-internal (Scope Boundary, Completeness Principle, specific Chinese
+// autonomy language) and were dropped in the wanman.dev split. A framework
+// consumer bringing their own ceo agent can re-enable these once the file
+// exists at packages/core/agents/ceo/CLAUDE.md.
+describe.skip('CEO CLAUDE.md autonomy guarantee (SaaS-only)', () => {
   it('should contain autonomy guarantee text', () => {
     const fs = require('node:fs')
     const path = require('node:path')

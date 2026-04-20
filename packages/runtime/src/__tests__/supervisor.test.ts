@@ -149,8 +149,8 @@ describe('Supervisor', () => {
 
       try {
         supervisor.handleRpc(rpc(RPC_METHODS.AGENT_SEND, {
-          from: 'ceo',
-          to: 'dev',
+          from: 'echo',
+          to: 'ping',
           type: 'message',
           payload: 'Please revise the rollout plan.',
           priority: 'steer',
@@ -163,10 +163,10 @@ describe('Supervisor', () => {
             body: JSON.stringify({
               event_type: 'thread',
               classification: 'steer',
-              agent: 'ceo',
+              agent: 'echo',
               payload: {
-                from: 'ceo',
-                to: 'dev',
+                from: 'echo',
+                to: 'ping',
                 type: 'message',
                 payload: 'Please revise the rollout plan.',
                 priority: 'steer',

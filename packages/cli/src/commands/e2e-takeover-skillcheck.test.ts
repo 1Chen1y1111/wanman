@@ -84,9 +84,12 @@ describe('takeover scanner E2E — wanman.ai itself', () => {
 })
 
 describe('skill:check E2E — real skills directory', () => {
-  it('should find all 7 skills', () => {
+  it('should find all bundled skills', () => {
+    // wanman.dev ships 6 generic skills (financial-analysis was SaaS-specific
+    // and removed in the OSS split). Keep this in sync with the directory
+    // contents under packages/core/skills/.
     const results = checkAllSkills(SKILLS_DIR)
-    expect(results.length).toBe(7)
+    expect(results.length).toBe(6)
   })
 
   it('should pass validation for all skills', () => {

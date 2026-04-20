@@ -87,6 +87,11 @@ describe('Supervisor brain RPC handlers', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    // Also drain any queued `mockResolvedValueOnce` / `mockRejectedValueOnce`
+    // left over from the previous test. `vi.clearAllMocks` only resets
+    // `mock.calls`, so without this an error-path test leaves a pending
+    // rejection that fires on the next handler's first executeSQL call.
+    mockExecuteSQL.mockReset()
     mockExecuteSQL.mockResolvedValue([])
     supervisor = new Supervisor(makeConfig())
     await supervisor.start()
@@ -217,10 +222,14 @@ describe('Supervisor brain RPC handlers', () => {
       expect(sql).toContain(' AND ')
     })
 
-    it('should escape single quotes in filter values', async () => {
-      mockExecuteSQL.mockResolvedValueOnce([])
-      await supervisor.handleRpcAsync(rpc(RPC_METHODS.ARTIFACT_LIST, { agent: "O'Malley" }))
-      expect(lastSQL()).toContain("agent = 'O''Malley'")
+    it('should reject agent names that fail the SAFE_IDENT whitelist', async () => {
+      // The handler guards with SAFE_IDENT before building SQL so that a
+      // malicious agent string (containing apostrophes, semicolons, etc.)
+      // cannot reach the query builder at all. This is stricter than
+      // per-value escaping and is the intentional design.
+      const res = await supervisor.handleRpcAsync(rpc(RPC_METHODS.ARTIFACT_LIST, { agent: "O'Malley" }))
+      expect(res.error?.code).toBe(RPC_ERRORS.INVALID_PARAMS)
+      expect(res.error?.message).toContain('invalid agent filter')
     })
 
     it('should sanitize verified to boolean string (prevent injection)', async () => {
@@ -369,10 +378,14 @@ describe('Supervisor brain RPC handlers', () => {
       expect(sql).not.toContain("status = 'active'")
     })
 
-    it('should escape single quotes in status', async () => {
-      mockExecuteSQL.mockResolvedValueOnce([])
-      await supervisor.handleRpcAsync(rpc(RPC_METHODS.HYPOTHESIS_LIST, { status: "active'; DROP TABLE--" }))
-      expect(lastSQL()).toContain("active''; DROP TABLE--")
+    it('should reject status values that fail the SAFE_IDENT whitelist', async () => {
+      // Defense-in-depth: the handler rejects an apostrophe-bearing status
+      // before building SQL rather than relying on escaping alone.
+      const res = await supervisor.handleRpcAsync(
+        rpc(RPC_METHODS.HYPOTHESIS_LIST, { status: "active'; DROP TABLE--" }),
+      )
+      expect(res.error?.code).toBe(RPC_ERRORS.INVALID_PARAMS)
+      expect(res.error?.message).toContain('invalid status')
     })
 
     it('should safely parse treeRoot to integer', async () => {
