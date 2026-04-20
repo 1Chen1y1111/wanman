@@ -125,8 +125,8 @@ describe('Preamble + real TaskPool E2E', () => {
       agentName: 'finance',
       tasks,
       recentMessages: [
-        { id: 1, from: 'ceo', to: 'finance', type: 'message', priority: 'normal' as const, payload: '请计算 MRR', timestamp: Date.now() },
-        { id: 2, from: 'feedback', to: 'finance', type: 'message', priority: 'steer' as const, payload: '紧急：竞品降价', timestamp: Date.now() },
+        { id: '1', from: 'ceo', to: 'finance', type: 'message', priority: 'normal' as const, payload: '请计算 MRR', timestamp: Date.now(), delivered: false },
+        { id: '2', from: 'feedback', to: 'finance', type: 'message', priority: 'steer' as const, payload: '紧急：竞品降价', timestamp: Date.now(), delivered: false },
       ],
       loopNumber: 20,
       uptimeSeconds: 1200,

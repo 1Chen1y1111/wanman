@@ -37,10 +37,10 @@ describe('LoopEventBus', () => {
       bus.tick()
 
       expect(events).toHaveLength(1)
-      expect(events[0].type).toBe('loop.tick')
-      expect(events[0].runId).toBe('run-test-001')
-      if (events[0].type === 'loop.tick') {
-        expect(events[0].loop).toBe(1)
+      expect(events[0]!.type).toBe('loop.tick')
+      expect(events[0]!.runId).toBe('run-test-001')
+      if (events[0]!.type === 'loop.tick') {
+        expect(events[0]!.loop).toBe(1)
       }
     })
   })
@@ -250,8 +250,8 @@ describe('LoopEventBus', () => {
       expect(snap.artifactsCreated).toBe(1)
       expect(snap.pendingMessages).toEqual({ marketing: 1 })
       expect(snap.agents).toHaveLength(2)
-      expect(snap.agents[0].name).toBe('ceo')
-      expect(snap.agents[0].state).toBe('running')
+      expect(snap.agents[0]!.name).toBe('ceo')
+      expect(snap.agents[0]!.state).toBe('running')
     })
   })
 

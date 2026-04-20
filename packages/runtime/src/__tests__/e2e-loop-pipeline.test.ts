@@ -64,7 +64,7 @@ describe('Full loop observability pipeline E2E', () => {
   let bus: LoopEventBus
   let logger: LoopLogger
   let heartbeat: Heartbeat
-  let mockBrainManager: { isInitialized: boolean; executeSQL: (...args: unknown[]) => Promise<unknown> } | null = null
+  let mockBrainManager: { isInitialized: boolean; executeSQL: (sql: string, ...rest: unknown[]) => Promise<unknown> } | null = null
 
   beforeAll(async () => {
     mkdirSync(tmpDir, { recursive: true })

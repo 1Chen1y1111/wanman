@@ -9,7 +9,7 @@ import type { AgentMatrixConfig } from '@wanman/core'
 
 // Capture execSync calls — must use vi.hoisted() since vi.mock is hoisted
 const { mockExecSync } = vi.hoisted(() => ({
-  mockExecSync: vi.fn<(...args: unknown[]) => string | Buffer>(),
+  mockExecSync: vi.fn<(cmd: string, ...rest: unknown[]) => string | Buffer>(),
 }))
 vi.mock('node:child_process', () => ({
   execSync: mockExecSync,

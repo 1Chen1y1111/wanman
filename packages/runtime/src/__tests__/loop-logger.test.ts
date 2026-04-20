@@ -88,7 +88,7 @@ describe('LoopLogger', () => {
       expect(existsSync(ndjsonPath)).toBe(true)
       const lines = readFileSync(ndjsonPath, 'utf-8').trim().split('\n')
       expect(lines).toHaveLength(1)
-      const event = JSON.parse(lines[0])
+      const event = JSON.parse(lines[0]!)
       expect(event.type).toBe('loop.tick')
       expect(event.runId).toBe('run-001')
 
@@ -145,7 +145,7 @@ describe('LoopLogger', () => {
       await new Promise(r => setTimeout(r, 10))
 
       expect(mockBrainManager.executeSQL).toHaveBeenCalledTimes(1)
-      const sql = mockBrainManager.executeSQL.mock.calls[0][0] as string
+      const sql = mockBrainManager.executeSQL.mock.calls[0]![0] as string
       expect(sql).toContain('INSERT INTO loop_events')
       expect(sql).toContain('run-001')
       expect(sql).toContain('loop.tick')
@@ -213,7 +213,7 @@ describe('LoopLogger', () => {
       await logger.createRun('run-001', 'test goal', { agents: [] })
 
       expect(mockBrainManager.executeSQL).toHaveBeenCalledTimes(1)
-      const sql = mockBrainManager.executeSQL.mock.calls[0][0] as string
+      const sql = mockBrainManager.executeSQL.mock.calls[0]![0] as string
       expect(sql).toContain('INSERT INTO runs')
       expect(sql).toContain('run-001')
       expect(sql).toContain('test goal')
@@ -226,7 +226,7 @@ describe('LoopLogger', () => {
       })
       await logger.createRun('run-001')
 
-      const sql = mockBrainManager.executeSQL.mock.calls[0][0] as string
+      const sql = mockBrainManager.executeSQL.mock.calls[0]![0] as string
       expect(sql).toContain('NULL')
     })
 
@@ -265,7 +265,7 @@ describe('LoopLogger', () => {
         exitReason: 'manual',
       })
 
-      const sql = mockBrainManager.executeSQL.mock.calls[0][0] as string
+      const sql = mockBrainManager.executeSQL.mock.calls[0]![0] as string
       expect(sql).toContain('UPDATE runs SET')
       expect(sql).toContain('total_loops = 100')
       expect(sql).toContain('productive_loops = 85')

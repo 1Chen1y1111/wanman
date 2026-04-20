@@ -109,7 +109,7 @@ function makeConfig(overrides?: Partial<AgentMatrixConfig>): AgentMatrixConfig {
   }
 }
 
-function rpc(method: string, params?: unknown, id = 1): JsonRpcRequest {
+function rpc(method: string, params?: Record<string, unknown>, id = 1): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
 }
 

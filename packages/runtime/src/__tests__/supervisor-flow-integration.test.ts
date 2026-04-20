@@ -14,7 +14,7 @@ import { RPC_METHODS } from '@wanman/core'
 
 // Track git commands for task→commit integration
 const { mockExecSync } = vi.hoisted(() => ({
-  mockExecSync: vi.fn<(...args: unknown[]) => string | Buffer>(),
+  mockExecSync: vi.fn<(cmd: string, ...rest: unknown[]) => string | Buffer>(),
 }))
 vi.mock('node:child_process', () => ({
   execSync: mockExecSync,

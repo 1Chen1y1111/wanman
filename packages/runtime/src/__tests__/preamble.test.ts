@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { AgentMessage } from '@wanman/core'
 import { generatePreamble, type PreambleInput } from '../preamble.js'
 import type { Task } from '../task-pool.js'
 
@@ -17,15 +18,16 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   }
 }
 
-function makeMessage(overrides: Partial<any> = {}) {
+function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
-    id: 1,
+    id: '1',
     from: 'ceo',
     to: 'dev',
     type: 'message',
-    priority: 'normal' as const,
+    priority: 'normal',
     payload: 'Hello',
     timestamp: Date.now(),
+    delivered: false,
     ...overrides,
   }
 }

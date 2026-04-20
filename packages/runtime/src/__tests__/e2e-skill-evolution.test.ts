@@ -24,7 +24,7 @@ vi.mock('../logger.js', () => ({
 import { SkillManager } from '../skill-manager.js'
 
 // In-memory SQL store simulating db9
-const tables: Record<string, Array<Record<string, unknown>>> = {
+const tables: { skills: Array<Record<string, unknown>>; run_feedback: Array<Record<string, unknown>> } = {
   skills: [],
   run_feedback: [],
 }

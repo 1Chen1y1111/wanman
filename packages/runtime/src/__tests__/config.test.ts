@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { AgentMatrixConfig } from '@wanman/core';
 import { buildEnrichedPrompt, loadConfig, ensureWorkspaceDirs } from '../config.js';
 
 // Mock logger to suppress output
@@ -56,7 +57,7 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-const sampleConfig = {
+const sampleConfig: AgentMatrixConfig = {
   agents: [
     { name: 'ceo', lifecycle: '24/7', model: 'sonnet', systemPrompt: 'You are CEO' },
     { name: 'dev', lifecycle: 'on-demand', model: 'sonnet', systemPrompt: 'You are Dev' },
@@ -263,7 +264,7 @@ describe('ensureWorkspaceDirs', () => {
 describe('buildEnrichedPrompt', () => {
   it('tells workers not to create backlog when they have no assigned tasks', () => {
     const prompt = buildEnrichedPrompt(
-      { name: 'marketing', lifecycle: '24/7', model: 'sonnet', systemPrompt: 'You are marketing' },
+      { name: 'marketing', lifecycle: '24/7' as const, model: 'sonnet', systemPrompt: 'You are marketing' },
       '/tmp/workspace',
       sampleConfig.agents,
       'Launch a blueberry farm',
@@ -275,7 +276,7 @@ describe('buildEnrichedPrompt', () => {
 
   it('tells agents to rely on the active skill snapshot instead of static global skills', () => {
     const prompt = buildEnrichedPrompt(
-      { name: 'dev', lifecycle: '24/7', model: 'sonnet', systemPrompt: 'You are dev' },
+      { name: 'dev', lifecycle: '24/7' as const, model: 'sonnet', systemPrompt: 'You are dev' },
       '/tmp/workspace',
       sampleConfig.agents,
       'Ship the patch',

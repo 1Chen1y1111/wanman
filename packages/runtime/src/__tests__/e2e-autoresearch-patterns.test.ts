@@ -25,7 +25,10 @@ import { LoopLogger } from '../loop-logger.js'
 
 // ── Shared in-memory SQL store ──
 
-const tables: Record<string, Array<Record<string, unknown>>> = { skills: [], run_feedback: [] }
+const tables: { skills: Array<Record<string, unknown>>; run_feedback: Array<Record<string, unknown>> } = {
+  skills: [],
+  run_feedback: [],
+}
 let idCounter = 0
 
 function resetDb() {
