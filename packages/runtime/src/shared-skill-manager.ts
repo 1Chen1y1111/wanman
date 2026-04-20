@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { BrainManager } from './brain-manager.js'
@@ -6,6 +7,42 @@ import { createLogger } from './logger.js'
 import { esc } from './sql-escape.js'
 
 const log = createLogger('shared-skill-manager')
+
+/**
+ * Resolve the on-disk root for materialized skill-activation snapshots.
+ *
+ * Resolution order:
+ *   1. Explicit `snapshotsRoot` argument (highest priority — tests/host override).
+ *   2. `WANMAN_SKILL_SNAPSHOTS_DIR` env var.
+ *   3. Sibling of `sharedSkillsDir` (e.g. `/opt/wanman/skill-snapshots` next to
+ *      `/opt/wanman/shared-skills`) iff that sibling is writable by the
+ *      current process. This is the in-container default and matches the
+ *      wanman.ai container layout.
+ *   4. `${os.tmpdir()}/wanman-skill-snapshots` — always writable, safe for
+ *      unprivileged OSS consumers running outside of a container.
+ *
+ * OSS consumers running `wanman` on a regular host should NOT hit a
+ * privileged path (/opt/wanman requires root to mkdir on most systems).
+ */
+function resolveSnapshotsRoot(sharedSkillsDir: string, explicit?: string): string {
+  if (explicit) return explicit
+  const envOverride = process.env['WANMAN_SKILL_SNAPSHOTS_DIR']
+  if (envOverride) return envOverride
+
+  const sibling = path.join(path.dirname(sharedSkillsDir), 'skill-snapshots')
+  try {
+    fs.mkdirSync(sibling, { recursive: true })
+    return sibling
+  } catch (err) {
+    const fallback = path.join(os.tmpdir(), 'wanman-skill-snapshots')
+    log.warn('falling back to tmpdir for skill snapshots', {
+      sibling,
+      fallback,
+      reason: err instanceof Error ? err.message : String(err),
+    })
+    return fallback
+  }
+}
 
 export type ActivationScope = 'task' | 'loop' | 'run'
 export type SharedSkillSource = 'builtin' | 'db' | 'project' | 'candidate'
@@ -51,7 +88,7 @@ export class SharedSkillManager {
   constructor(brainManager: BrainManager | null, sharedSkillsDir: string, snapshotsRoot?: string) {
     this.brainManager = brainManager
     this.sharedSkillsDir = sharedSkillsDir
-    this.snapshotsRoot = snapshotsRoot ?? path.join(path.dirname(sharedSkillsDir), 'skill-snapshots')
+    this.snapshotsRoot = resolveSnapshotsRoot(sharedSkillsDir, snapshotsRoot)
   }
 
   listFilesystemSkills(): FilesystemSkill[] {
