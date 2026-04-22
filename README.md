@@ -10,7 +10,7 @@ wanman is an open-source local-mode agent matrix framework. Runs a supervised ne
 
 The name wanman comes from the Japanese [ワンマン電車 / one-man train](https://en.wikipedia.org/wiki/One-person_operation): a train operated by one driver without a conductor. wanman's design goal is similar in spirit: the human user steps back into an observer role and watches the agent matrix run automatically from every angle.
 
-[wanman.ai](https://wanman.ai/) provides the fully automated 24/7 sandbox edition of wanman, running for free on [Sandbank Cloud](https://sandbank.cloud/)'s sandbox cloud.
+[wanman.ai](https://wanman.ai/) provides the fully automated 24/7 sandbox edition of wanman, running for free on [Sandbank Cloud](https://cloud.sandbank.dev/)'s sandbox cloud.
 
 ## What it does
 
