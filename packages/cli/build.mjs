@@ -29,10 +29,7 @@ await build({
   banner: {
     js: '#!/usr/bin/env node',
   },
-  external: [
-    '@sandbank.dev/core',
-    '@sandbank.dev/boxlite',
-  ],
+  external: [],
 });
 
 console.log('Build complete: dist/wanman.js (host)');
@@ -44,10 +41,7 @@ await build({
   target: 'node20',
   format: 'esm',
   outfile: 'dist/sdk.js',
-  external: [
-    '@sandbank.dev/core',
-    '@sandbank.dev/boxlite',
-  ],
+  external: [],
 });
 
 console.log('Build complete: dist/sdk.js (host sdk)');

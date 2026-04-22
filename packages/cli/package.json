@@ -21,8 +21,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@sandbank.dev/boxlite": "^0.3.4",
-    "@sandbank.dev/core": "^0.3.4",
     "@wanman/core": "workspace:*",
     "@wanman/host-sdk": "workspace:*",
     "chalk": "^5.6.2",

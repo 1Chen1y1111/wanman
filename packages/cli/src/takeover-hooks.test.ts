@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ExecutionBackend } from './execution-backend.js'
 import type { ExecutionContext, PollExecutionContext, RunOptions } from './execution-session.js'
+import type { LocalSupervisorHandle } from './local-supervisor.js'
 import type { RuntimeClient } from './runtime-client.js'
 import type { ProjectIntent, ProjectProfile } from './takeover-project.js'
 import { buildTakeoverExecutionHooks } from './takeover-hooks.js'
@@ -99,11 +99,11 @@ function makeRuntime(): RuntimeClient & {
 }
 
 function makeContext(runtime: RuntimeClient): ExecutionContext {
-  const backend: ExecutionBackend = {
-    kind: 'sandbox',
+  const backend: LocalSupervisorHandle = {
     runtime,
-    endpoint: 'http://localhost:3120',
-    sandbox: {} as any,
+    endpoint: 'http://127.0.0.1:3120',
+    port: 3120,
+    child: {} as any,
     readLogs: vi.fn().mockResolvedValue({ lines: [], cursor: 0 }),
     attachSignalForwarding: vi.fn(() => () => {}),
     stop: vi.fn().mockResolvedValue(undefined),
@@ -122,7 +122,6 @@ function makeContext(runtime: RuntimeClient): ExecutionContext {
 
   return {
     backend,
-    sandbox: {} as any,
     runtime,
     goal: 'goal',
     opts,

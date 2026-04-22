@@ -1,10 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execSync } from 'node:child_process'
-import type { Sandbox } from '@sandbank.dev/core'
 import type { ProjectRunSpec as BaseProjectRunSpec, RunOptions } from '@wanman/host-sdk'
-import type { AgentRuntime } from '@wanman/core'
-import { type ExecutionBackend } from './execution-backend.js'
 import { Heartbeat, LoopEventBus, LoopLogger } from './loop-observability.js'
 import {
   type HealthAgent,
@@ -12,21 +9,12 @@ import {
   type RuntimeClient,
   type TaskInfo,
 } from './runtime-client.js'
-import {
-  codexStatusIndicatesAuthenticated,
-  startCodexDeviceLogin,
-} from './sandbox-auth.js'
-import {
-  createRunLaunchPlan,
-  createRunSessionPlan,
-  createSandboxRuntimeEnv,
-} from './run-orchestrator.js'
+import type { LocalSupervisorHandle } from './local-supervisor.js'
+import { createRunLaunchPlan, createRunSessionPlan } from './run-orchestrator.js'
 import { runLocalExecution } from './run-local-executor.js'
-import { runSandboxExecution } from './run-sandbox-executor.js'
 import { renderDashboard, type DashboardState } from './tui/dashboard.js'
 import { countTransitions, classifyLoop, type LoopSnapshot, type LoopClassification } from './loop-classifier.js'
 
-export type { ExecutionBackend } from './execution-backend.js'
 export type { HealthAgent, RuntimeClient, TaskInfo } from './runtime-client.js'
 export type { RunOptions } from '@wanman/host-sdk'
 
@@ -51,15 +39,13 @@ export interface RunExecutionBindings {
 }
 
 export interface ExecutionContext {
-  backend: ExecutionBackend
-  sandbox?: Sandbox
+  backend: LocalSupervisorHandle
   runtime: RuntimeClient
   goal: string
   opts: RunOptions
   spec: ProjectRunSpec
   runId: string
   workspaceRoot: string
-  sandboxRepoRoot?: string
   brainName?: string
 }
 
@@ -136,247 +122,6 @@ function buildIfNeeded(root: string): void {
   if (isStale(cliDist, cliSrc) || isStale(cliDist, coreSrc)) {
     console.log('  [build] Building @wanman/cli...')
     execSync('pnpm --filter @wanman/cli build', { cwd: root, stdio: 'inherit' })
-  }
-}
-
-async function writeFileLarge(sandbox: Sandbox, filePath: string, content: string): Promise<void> {
-  const chunkSize = 64 * 1024
-  const bytes = Buffer.from(content, 'utf-8')
-  const dir = filePath.substring(0, filePath.lastIndexOf('/'))
-  if (dir) await sandbox.exec(`mkdir -p '${dir}'`)
-
-  const firstChunk = bytes.subarray(0, chunkSize).toString('base64')
-  await sandbox.exec(`printf '%s' '${firstChunk}' | base64 -d > '${filePath}'`)
-
-  for (let offset = chunkSize; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize).toString('base64')
-    await sandbox.exec(`printf '%s' '${chunk}' | base64 -d >> '${filePath}'`)
-  }
-}
-
-async function uploadBundle(sandbox: Sandbox, root: string, configPath: string): Promise<void> {
-  await sandbox.exec('mkdir -p /opt/wanman/runtime /opt/wanman/skills /workspace/agents')
-
-  console.log('  [bundle] Uploading entrypoint.js...')
-  const entrypoint = fs.readFileSync(path.join(root, 'packages/runtime/dist/entrypoint.js'), 'utf-8')
-  await writeFileLarge(sandbox, '/opt/wanman/runtime/entrypoint.js', entrypoint)
-
-  const sqliteCheck = await sandbox.exec('test -d /opt/wanman/runtime/node_modules/better-sqlite3 && echo OK || echo MISSING')
-  if (sqliteCheck.stdout.trim() !== 'OK') {
-    console.log('  [bundle] Installing native dependencies...')
-    await sandbox.exec('cd /opt/wanman/runtime && npm init -y > /dev/null 2>&1 && npm install better-sqlite3', { timeout: 600_000 })
-  }
-
-  console.log('  [bundle] Uploading wanman CLI...')
-  const cli = fs.readFileSync(path.join(root, 'packages/cli/dist/index.js'), 'utf-8')
-  await writeFileLarge(sandbox, '/usr/local/bin/wanman', cli)
-  await sandbox.exec('chmod +x /usr/local/bin/wanman')
-
-  console.log('  [bundle] Uploading config...')
-  const config = fs.readFileSync(configPath, 'utf-8')
-  await sandbox.writeFile('/opt/wanman/agents.json', config)
-
-  const skillsDir = path.join(root, 'packages/core/agents')
-  if (fs.existsSync(skillsDir)) {
-    for (const agentDir of fs.readdirSync(skillsDir)) {
-      const claudeMd = path.join(skillsDir, agentDir, 'CLAUDE.md')
-      if (fs.existsSync(claudeMd)) {
-        await sandbox.exec(`mkdir -p /opt/wanman/skills/${agentDir}`)
-        await sandbox.writeFile(`/opt/wanman/skills/${agentDir}/CLAUDE.md`, fs.readFileSync(claudeMd, 'utf-8'))
-      }
-    }
-  }
-
-  const sharedSkillsDir = path.join(root, 'packages/core/skills')
-  if (fs.existsSync(sharedSkillsDir)) {
-    await sandbox.exec('mkdir -p /opt/wanman/shared-skills')
-    for (const skillDir of fs.readdirSync(sharedSkillsDir)) {
-      const skillPath = path.join(sharedSkillsDir, skillDir)
-      if (!fs.statSync(skillPath).isDirectory()) continue
-      const skillMd = path.join(skillPath, 'SKILL.md')
-      if (fs.existsSync(skillMd)) {
-        await sandbox.exec(`mkdir -p /opt/wanman/shared-skills/${skillDir}`)
-        await sandbox.writeFile(`/opt/wanman/shared-skills/${skillDir}/SKILL.md`, fs.readFileSync(skillMd, 'utf-8'))
-      }
-    }
-  }
-
-  const productsPath = path.join(root, 'apps/container/products.json')
-  if (fs.existsSync(productsPath)) {
-    await sandbox.writeFile('/opt/wanman/products.json', fs.readFileSync(productsPath, 'utf-8'))
-  }
-}
-
-async function uploadBundleStandalone(sandbox: Sandbox, assets: EmbeddedAssets, configName: string): Promise<void> {
-  await sandbox.exec('mkdir -p /opt/wanman/runtime /opt/wanman/skills /workspace/agents')
-
-  console.log('  [bundle] Uploading entrypoint.js (embedded)...')
-  await writeFileLarge(sandbox, '/opt/wanman/runtime/entrypoint.js', assets.ENTRYPOINT_JS)
-
-  const sqliteCheck = await sandbox.exec('test -d /opt/wanman/runtime/node_modules/better-sqlite3 && echo OK || echo MISSING')
-  if (sqliteCheck.stdout.trim() !== 'OK') {
-    console.log('  [bundle] Installing native dependencies...')
-    await sandbox.exec('cd /opt/wanman/runtime && npm init -y > /dev/null 2>&1 && npm install better-sqlite3', { timeout: 600_000 })
-  }
-
-  console.log('  [bundle] Uploading wanman CLI (embedded)...')
-  await writeFileLarge(sandbox, '/usr/local/bin/wanman', assets.CLI_JS)
-  await sandbox.exec('chmod +x /usr/local/bin/wanman')
-
-  console.log('  [bundle] Uploading config...')
-  const config = assets.AGENT_CONFIGS[configName]
-  if (!config) throw new Error(`Embedded config '${configName}' not found. Available: ${Object.keys(assets.AGENT_CONFIGS).join(', ')}`)
-  await sandbox.writeFile('/opt/wanman/agents.json', config)
-
-  for (const [name, content] of Object.entries(assets.AGENT_SKILLS)) {
-    await sandbox.exec(`mkdir -p /opt/wanman/skills/${name}`)
-    await sandbox.writeFile(`/opt/wanman/skills/${name}/CLAUDE.md`, content)
-  }
-
-  if (Object.keys(assets.SHARED_SKILLS).length > 0) {
-    await sandbox.exec('mkdir -p /opt/wanman/shared-skills')
-    for (const [name, content] of Object.entries(assets.SHARED_SKILLS)) {
-      await sandbox.exec(`mkdir -p /opt/wanman/shared-skills/${name}`)
-      await sandbox.writeFile(`/opt/wanman/shared-skills/${name}/SKILL.md`, content)
-    }
-  }
-
-  if (assets.PRODUCTS_JSON) {
-    await sandbox.writeFile('/opt/wanman/products.json', assets.PRODUCTS_JSON)
-  }
-}
-
-async function uploadProjectBundle(
-  sandbox: Sandbox,
-  projectDir: string,
-  runtime: { root: string } | { embedded: EmbeddedAssets },
-  workspaceRoot = '/workspace/agents',
-): Promise<void> {
-  await sandbox.exec(`mkdir -p /opt/wanman/runtime /opt/wanman/skills '${workspaceRoot}'`)
-
-  if ('root' in runtime) {
-    console.log('  [bundle] Uploading entrypoint.js...')
-    const entrypoint = fs.readFileSync(path.join(runtime.root, 'packages/runtime/dist/entrypoint.js'), 'utf-8')
-    await writeFileLarge(sandbox, '/opt/wanman/runtime/entrypoint.js', entrypoint)
-    console.log('  [bundle] Uploading wanman CLI...')
-    const cli = fs.readFileSync(path.join(runtime.root, 'packages/cli/dist/index.js'), 'utf-8')
-    await writeFileLarge(sandbox, '/usr/local/bin/wanman', cli)
-  } else {
-    console.log('  [bundle] Uploading entrypoint.js (embedded)...')
-    await writeFileLarge(sandbox, '/opt/wanman/runtime/entrypoint.js', runtime.embedded.ENTRYPOINT_JS)
-    console.log('  [bundle] Uploading wanman CLI (embedded)...')
-    await writeFileLarge(sandbox, '/usr/local/bin/wanman', runtime.embedded.CLI_JS)
-  }
-  await sandbox.exec('chmod +x /usr/local/bin/wanman')
-
-  const sqliteCheck = await sandbox.exec('test -d /opt/wanman/runtime/node_modules/better-sqlite3 && echo OK || echo MISSING')
-  if (sqliteCheck.stdout.trim() !== 'OK') {
-    console.log('  [bundle] Installing native dependencies...')
-    await sandbox.exec('cd /opt/wanman/runtime && npm init -y > /dev/null 2>&1 && npm install better-sqlite3', { timeout: 600_000 })
-  }
-
-  console.log('  [bundle] Uploading config (project)...')
-  const config = fs.readFileSync(path.join(projectDir, 'agents.json'), 'utf-8')
-  await sandbox.writeFile('/opt/wanman/agents.json', config)
-
-  const agentsDir = path.join(projectDir, 'agents')
-  if (fs.existsSync(agentsDir)) {
-    for (const agentDir of fs.readdirSync(agentsDir)) {
-      const claudeMd = path.join(agentsDir, agentDir, 'CLAUDE.md')
-      if (fs.existsSync(claudeMd)) {
-        await sandbox.exec(`mkdir -p /opt/wanman/skills/${agentDir}`)
-        await sandbox.writeFile(`/opt/wanman/skills/${agentDir}/CLAUDE.md`, fs.readFileSync(claudeMd, 'utf-8'))
-      }
-    }
-  }
-
-  await sandbox.exec('mkdir -p /opt/wanman/shared-skills')
-  if ('root' in runtime) {
-    const builtinSkillsDir = path.join(runtime.root, 'packages/core/skills')
-    if (fs.existsSync(builtinSkillsDir)) {
-      for (const skillDir of fs.readdirSync(builtinSkillsDir)) {
-        const skillPath = path.join(builtinSkillsDir, skillDir)
-        if (!fs.statSync(skillPath).isDirectory()) continue
-        const skillMd = path.join(skillPath, 'SKILL.md')
-        if (fs.existsSync(skillMd)) {
-          await sandbox.exec(`mkdir -p /opt/wanman/shared-skills/${skillDir}`)
-          await sandbox.writeFile(`/opt/wanman/shared-skills/${skillDir}/SKILL.md`, fs.readFileSync(skillMd, 'utf-8'))
-        }
-      }
-    }
-  } else {
-    for (const [name, content] of Object.entries(runtime.embedded.SHARED_SKILLS)) {
-      await sandbox.exec(`mkdir -p /opt/wanman/shared-skills/${name}`)
-      await sandbox.writeFile(`/opt/wanman/shared-skills/${name}/SKILL.md`, content)
-    }
-  }
-
-  const projectSkillsDir = path.join(projectDir, 'skills')
-  if (fs.existsSync(projectSkillsDir)) {
-    for (const skillDir of fs.readdirSync(projectSkillsDir)) {
-      const skillPath = path.join(projectSkillsDir, skillDir)
-      if (!fs.statSync(skillPath).isDirectory()) continue
-      const skillMd = path.join(skillPath, 'SKILL.md')
-      if (fs.existsSync(skillMd)) {
-        await sandbox.exec(`mkdir -p /opt/wanman/shared-skills/${skillDir}`)
-        await sandbox.writeFile(`/opt/wanman/shared-skills/${skillDir}/SKILL.md`, fs.readFileSync(skillMd, 'utf-8'))
-      }
-    }
-  }
-
-  const productsPath = path.join(projectDir, 'products.json')
-  if (fs.existsSync(productsPath)) {
-    await sandbox.writeFile('/opt/wanman/products.json', fs.readFileSync(productsPath, 'utf-8'))
-  }
-}
-
-const REPO_ARCHIVE_EXCLUDES = [
-  '.git',
-  'node_modules',
-  '.next',
-  'dist',
-  'build',
-  'coverage',
-  '.turbo',
-  '.pnpm-store',
-  '.venv',
-  'venv',
-  '__pycache__',
-]
-
-function createRepoSnapshotArchive(repoDir: string): string {
-  const tempDir = fs.mkdtempSync(path.join(process.env['TMPDIR'] || '/tmp', 'wanman-takeover-archive-'))
-  const archivePath = path.join(tempDir, 'repo.tgz')
-  const excludes = REPO_ARCHIVE_EXCLUDES
-    .map(pattern => `--exclude=${JSON.stringify(pattern)}`)
-    .join(' ')
-
-  execSync(
-    `COPYFILE_DISABLE=1 tar -czf ${JSON.stringify(archivePath)} ${excludes} -C ${JSON.stringify(repoDir)} .`,
-    { stdio: 'pipe' },
-  )
-
-  return archivePath
-}
-
-async function uploadRepoSnapshot(sandbox: Sandbox, repoDir: string, sandboxRepoRoot: string): Promise<void> {
-  console.log(`  [bundle] Uploading repo snapshot from ${repoDir}...`)
-  const archivePath = createRepoSnapshotArchive(repoDir)
-  const remoteB64 = '/tmp/wanman-repo.tgz.b64'
-  const remoteTgz = '/tmp/wanman-repo.tgz'
-
-  try {
-    const b64 = fs.readFileSync(archivePath).toString('base64')
-    await writeFileLarge(sandbox, remoteB64, b64)
-    await sandbox.exec(
-      `mkdir -p '${sandboxRepoRoot}'`
-      + ` && base64 -d '${remoteB64}' > '${remoteTgz}'`
-      + ` && tar -xzf '${remoteTgz}' -C '${sandboxRepoRoot}'`
-      + ` && rm -f '${remoteB64}' '${remoteTgz}'`,
-      { timeout: 600_000 },
-    )
-  } finally {
-    fs.rmSync(path.dirname(archivePath), { recursive: true, force: true })
   }
 }
 
@@ -505,183 +250,6 @@ function getDb9Token(env: NodeJS.ProcessEnv = process.env): string | undefined {
   }
 }
 
-const CRED_CACHE_DIR = path.join(process.env['HOME'] ?? '/root', '.cache', 'wanman')
-const CLAUDE_CRED_CACHE_FILE = path.join(CRED_CACHE_DIR, 'credentials.json')
-const CLAUDE_JSON_CACHE = path.join(CRED_CACHE_DIR, 'claude.json')
-const CODEX_AUTH_CACHE_FILE = path.join(CRED_CACHE_DIR, 'codex-auth.json')
-const CRED_MIN_LIFETIME_MS = 30 * 60 * 1000
-
-function loadCachedClaudeCredentials(): { accessToken: string; refreshToken: string; expiresAt: number } | null {
-  try {
-    if (!fs.existsSync(CLAUDE_CRED_CACHE_FILE)) return null
-    const data = JSON.parse(fs.readFileSync(CLAUDE_CRED_CACHE_FILE, 'utf-8'))
-    const remaining = data.claudeAiOauth.expiresAt - Date.now()
-    if (remaining < CRED_MIN_LIFETIME_MS) return null
-    return data.claudeAiOauth
-  } catch {
-    return null
-  }
-}
-
-function loadCachedCodexAuth(): string | null {
-  try {
-    if (!fs.existsSync(CODEX_AUTH_CACHE_FILE)) return null
-    const raw = fs.readFileSync(CODEX_AUTH_CACHE_FILE, 'utf-8')
-    const data = JSON.parse(raw) as { tokens?: { access_token?: string } }
-    return data.tokens?.access_token ? raw : null
-  } catch {
-    return null
-  }
-}
-
-async function setupClaudeAuth(sandbox: Sandbox, home: string, useThirdPartyApi: boolean): Promise<void> {
-  const hasExistingAuth = await sandbox.exec(`test -f '${home}/.claude/.credentials.json' && test -f '${home}/.claude.json'`)
-  if (hasExistingAuth.exitCode === 0) {
-    console.log('  [auth] Existing Claude credentials detected, skipping auth')
-    return
-  }
-
-  if (useThirdPartyApi) {
-    const claudeVer = (await sandbox.exec('claude --version 2>&1')).stdout.trim()
-    const claudeJson = JSON.stringify({ hasCompletedOnboarding: true, lastOnboardingVersion: claudeVer })
-    await sandbox.exec(`mkdir -p ${home}/.claude`)
-    await sandbox.writeFile(`${home}/.claude.json`, claudeJson)
-    console.log('  [auth] Claude third-party API mode - no OAuth needed')
-    return
-  }
-
-  const cached = loadCachedClaudeCredentials()
-  if (cached) {
-    await sandbox.exec(`mkdir -p ${home}/.claude`)
-    await sandbox.writeFile(`${home}/.claude/.credentials.json`, fs.readFileSync(CLAUDE_CRED_CACHE_FILE, 'utf-8'))
-    const claudeVer = (await sandbox.exec('claude --version 2>&1')).stdout.trim()
-    let claudeJson: string
-    if (fs.existsSync(CLAUDE_JSON_CACHE)) {
-      claudeJson = fs.readFileSync(CLAUDE_JSON_CACHE, 'utf-8')
-      try {
-        const parsed = JSON.parse(claudeJson)
-        parsed.lastOnboardingVersion = claudeVer
-        claudeJson = JSON.stringify(parsed)
-      } catch {
-        // use as-is
-      }
-    } else {
-      claudeJson = JSON.stringify({ hasCompletedOnboarding: true, lastOnboardingVersion: claudeVer })
-    }
-    await sandbox.writeFile(`${home}/.claude.json`, claudeJson)
-    console.log('  [auth] Using cached Claude credentials')
-    return
-  }
-
-  const { startClaudeLogin } = await import('@sandbank.dev/core')
-  console.log('\n  [auth] Starting OAuth login...')
-  const { url, sendCode, waitForCredentials } = await startClaudeLogin(sandbox, { installCommand: 'true' })
-
-  try { execSync(`open ${JSON.stringify(url)}`) } catch { /* ignore */ }
-  console.log(`\n  ${url}\n`)
-
-  const codeFile = '/tmp/wanman-auth-code'
-  fs.rmSync(codeFile, { force: true })
-  console.log(`  Waiting for auth code... echo "CODE" > ${codeFile}`)
-
-  let authCode = ''
-  const start = Date.now()
-  while (Date.now() - start < 600_000) {
-    try {
-      if (fs.existsSync(codeFile)) {
-        authCode = fs.readFileSync(codeFile, 'utf-8').trim()
-        if (authCode) break
-      }
-    } catch {
-      // retry
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000))
-  }
-  if (!authCode) throw new Error('Auth code timeout (10 min)')
-
-  await sendCode(authCode)
-  await waitForCredentials(120_000)
-  await sandbox.exec('screen -S claude-login -X quit 2>/dev/null || true')
-
-  const claudeVer = (await sandbox.exec('claude --version 2>&1')).stdout.trim()
-  const claudeJson = JSON.stringify({ hasCompletedOnboarding: true, lastOnboardingVersion: claudeVer })
-  await sandbox.writeFile(`${home}/.claude.json`, claudeJson)
-
-  try {
-    const credsResult = await sandbox.exec(`cat ${home}/.claude/.credentials.json`)
-    if (credsResult.exitCode === 0 && credsResult.stdout.trim()) {
-      fs.mkdirSync(CRED_CACHE_DIR, { recursive: true })
-      fs.writeFileSync(CLAUDE_CRED_CACHE_FILE, credsResult.stdout, { mode: 0o600 })
-      fs.writeFileSync(CLAUDE_JSON_CACHE, claudeJson, { mode: 0o600 })
-    }
-  } catch {
-    // non-fatal
-  }
-
-  console.log('  [auth] Claude authenticated!')
-}
-
-async function codexStatusAuthenticated(sandbox: Sandbox): Promise<boolean> {
-  const result = await sandbox.exec('codex login status 2>&1 || true')
-  return codexStatusIndicatesAuthenticated(`${result.stdout}\n${result.stderr}`)
-}
-
-async function setupCodexAuth(sandbox: Sandbox, home: string): Promise<void> {
-  const codexBinary = await sandbox.exec('command -v codex >/dev/null && echo OK || echo MISSING')
-  if (codexBinary.stdout.trim() !== 'OK') {
-    throw new Error('Codex CLI not installed in sandbox image')
-  }
-
-  const hasExistingAuth = await sandbox.exec(`test -s '${home}/.codex/auth.json' && echo OK || echo MISSING`)
-  if (hasExistingAuth.stdout.trim() === 'OK' && await codexStatusAuthenticated(sandbox)) {
-    console.log('  [auth] Existing Codex credentials detected, skipping auth')
-    return
-  }
-
-  const cachedAuth = loadCachedCodexAuth()
-  if (cachedAuth) {
-    await sandbox.exec(`mkdir -p '${home}/.codex'`)
-    await sandbox.writeFile(`${home}/.codex/auth.json`, cachedAuth)
-    if (await codexStatusAuthenticated(sandbox)) {
-      console.log('  [auth] Using cached Codex credentials')
-      return
-    }
-    await sandbox.exec(`rm -f '${home}/.codex/auth.json'`)
-    console.log('  [auth] Cached Codex credentials were rejected, re-running device login')
-  }
-
-  console.log('\n  [auth] Starting Codex device login...')
-  const login = await startCodexDeviceLogin(sandbox, home)
-  try {
-    try { execSync(`open ${JSON.stringify(login.url)}`) } catch { /* ignore */ }
-    console.log(`\n  ${login.url}\n`)
-    console.log(`  One-time code: ${login.code}`)
-    console.log('  Complete authorization in your browser. Waiting for sandbox credentials...')
-
-    const authJson = await login.waitForCredentials()
-    fs.mkdirSync(CRED_CACHE_DIR, { recursive: true })
-    fs.writeFileSync(CODEX_AUTH_CACHE_FILE, authJson, { mode: 0o600 })
-  } finally {
-    await login.cleanup().catch(() => {})
-  }
-
-  console.log('  [auth] Codex authenticated!')
-}
-
-async function setupAuth(
-  sandbox: Sandbox,
-  opts: { useThirdPartyApi: boolean; runtimes: AgentRuntime[] },
-): Promise<void> {
-  const home = (await sandbox.exec('echo $HOME')).stdout.trim() || '/root'
-  for (const runtime of opts.runtimes) {
-    if (runtime === 'codex') {
-      await setupCodexAuth(sandbox, home)
-    } else {
-      await setupClaudeAuth(sandbox, home, opts.useThirdPartyApi)
-    }
-  }
-}
-
 function selectConfig(root: string, opts: RunOptions, db9Token?: string): string {
   if (opts.configPath) return path.resolve(opts.configPath)
   const hybrid = path.join(root, 'apps/container/agents.e2e-hybrid.json')
@@ -756,68 +324,6 @@ async function exportTasks(runtime: RuntimeClient, localDir: string): Promise<vo
   }
 }
 
-async function downloadDeliverables(
-  sandbox: Sandbox,
-  runtime: RuntimeClient,
-  outputDir: string,
-  brainName?: string,
-  workspaceRoot = '/workspace/agents',
-): Promise<void> {
-  console.log('\n  Downloading deliverables...')
-
-  const checkResult = await sandbox.exec(`find '${workspaceRoot}' -type f 2>/dev/null | head -1`)
-  if (!checkResult.stdout.trim()) {
-    console.log('  No deliverable files found.')
-    return
-  }
-
-  const dirName = brainName || `run-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
-  const localDir = path.resolve(outputDir, dirName)
-  fs.mkdirSync(localDir, { recursive: true })
-
-  try {
-    const archiveStream = await sandbox.downloadArchive(workspaceRoot)
-    const tarPath = path.join(localDir, '_archive.tar')
-    const chunks: Uint8Array[] = []
-    const reader = archiveStream.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-    }
-    const tarData = Buffer.concat(chunks)
-    fs.writeFileSync(tarPath, tarData)
-    execSync(`tar xf '${tarPath}' -C '${localDir}'`, { stdio: 'pipe' })
-    fs.rmSync(tarPath)
-    const fileCount = execSync(`find '${localDir}' -type f | wc -l`, { encoding: 'utf-8' }).trim()
-    console.log(`  Downloaded ${fileCount} files → ${localDir}`)
-  } catch {
-    console.log('  Archive download failed, falling back to per-file...')
-    const findResult = await sandbox.exec(
-      `find '${workspaceRoot}' -type f \\( -path '*/output/*' -o -name 'CLAUDE.md' \\) 2>/dev/null | sort`,
-    )
-    const files = findResult.stdout.trim().split('\n').filter(Boolean)
-    let downloaded = 0
-    for (const remotePath of files) {
-      const prefix = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const relative = remotePath.replace(new RegExp(`^${prefix}/`), '')
-      const localPath = path.join(localDir, relative)
-      try {
-        fs.mkdirSync(path.dirname(localPath), { recursive: true })
-        const content = await sandbox.readFile(remotePath)
-        fs.writeFileSync(localPath, content)
-        downloaded++
-      } catch {
-        console.log(`  [skip] ${relative}`)
-      }
-    }
-    console.log(`  Downloaded ${downloaded}/${files.length} files → ${localDir}`)
-  }
-
-  exportBrainArtifacts(localDir, brainName)
-  await exportTasks(runtime, localDir)
-}
-
 async function downloadLocalDeliverables(
   runtime: RuntimeClient,
   outputDir: string,
@@ -844,33 +350,6 @@ async function downloadLocalDeliverables(
   console.log(`  Downloaded ${fileCount} files → ${localDir}`)
   exportBrainArtifacts(localDir, brainName)
   await exportTasks(runtime, localDir)
-}
-
-async function downloadRepoPatch(
-  sandbox: Sandbox,
-  outputDir: string,
-  repoRoot: string,
-  brainName?: string,
-): Promise<void> {
-  const dirName = brainName || `run-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
-  const localDir = path.resolve(outputDir, dirName)
-  fs.mkdirSync(localDir, { recursive: true })
-
-  const status = await sandbox.exec(`git -C '${repoRoot}' status --short`)
-  if (!status.stdout.trim()) {
-    return
-  }
-
-  const diff = await sandbox.exec(`git -C '${repoRoot}' diff --binary`)
-  const cachedDiff = await sandbox.exec(`git -C '${repoRoot}' diff --cached --binary`)
-  fs.writeFileSync(path.join(localDir, 'repo-status.txt'), status.stdout)
-  if (diff.stdout.trim()) {
-    fs.writeFileSync(path.join(localDir, 'repo.patch'), diff.stdout)
-  }
-  if (cachedDiff.stdout.trim()) {
-    fs.writeFileSync(path.join(localDir, 'repo-staged.patch'), cachedDiff.stdout)
-  }
-  console.log(`  Exported repo patch → ${localDir}`)
 }
 
 async function downloadLocalRepoPatch(
@@ -939,18 +418,17 @@ async function maybeSendRunKickoff(runtime: RuntimeClient, goal: string, from = 
 }
 
 async function observeExecutionBackend(params: {
-  backend: ExecutionBackend
+  backend: LocalSupervisorHandle
   goal: string
   opts: RunOptions
   spec: ProjectRunSpec
   runId: string
   workspaceRoot: string
-  sandboxRepoRoot?: string
   brainName?: string
   hooks?: ExecutionHooks
   shouldStop?: () => boolean
 }): Promise<{ finalLoop: number; finalTasks: TaskInfo[] }> {
-  const { backend, goal, opts, spec, runId, workspaceRoot, sandboxRepoRoot, brainName, hooks } = params
+  const { backend, goal, opts, spec, runId, workspaceRoot, brainName, hooks } = params
   const runtime = backend.runtime
 
   if (!hooks?.afterHealthy) {
@@ -960,14 +438,12 @@ async function observeExecutionBackend(params: {
   if (hooks?.afterHealthy) {
     await hooks.afterHealthy({
       backend,
-      sandbox: backend.sandbox,
       runtime,
       goal,
       opts,
       spec,
       runId,
       workspaceRoot,
-      sandboxRepoRoot,
       brainName,
     })
   }
@@ -1047,14 +523,12 @@ async function observeExecutionBackend(params: {
     if (hooks?.afterPoll || hooks?.shouldStop) {
       const pollContext: PollExecutionContext = {
         backend,
-        sandbox: backend.sandbox,
         runtime,
         goal,
         opts,
         spec,
         runId,
         workspaceRoot,
-        sandboxRepoRoot,
         brainName,
         loop,
         startTime,
@@ -1222,15 +696,7 @@ export async function runExecutionSession(
 ): Promise<void> {
   const hostEnv = bindings.hostEnv ?? process.env
   const launchPlan = createRunLaunchPlan(opts, spec)
-  const {
-    requestedProjectDir,
-    projectDir,
-    repoSourceDir,
-    sandboxRepoRoot,
-    sandboxGitRoot,
-    localGitRoot,
-    workspaceRoot,
-  } = launchPlan
+  const { projectDir, localGitRoot } = launchPlan
   const hooks = spec.hooks
 
   const root = findProjectRoot()
@@ -1265,11 +731,8 @@ export async function runExecutionSession(
   const {
     brainName,
     runId,
-    useThirdPartyApi,
-    useHybrid,
     runtimeOverride,
     codexConfigLabel,
-    requiredRuntimes,
     runtimeLabel,
     llmModeLabel,
   } = sessionPlan
@@ -1290,98 +753,37 @@ ${codexConfigLabel ? `  │  Codex:  ${codexConfigLabel.padEnd(40)}│\n` : ''} 
 `)
 
   if (root) {
-    console.log('  [1/6] Checking builds...')
+    console.log('  [1/4] Checking builds...')
     buildIfNeeded(root)
   } else {
-    console.log('  [1/6] Skip build (no monorepo)')
+    console.log('  [1/4] Skip build (no monorepo)')
   }
 
-  if (opts.local) {
-    console.log('  [2/4] Preparing local workspace...')
-    const localLayout = materializeLocalRunLayout({
-      runId,
-      outputDir: opts.output,
-      projectDir,
-      root,
-      embedded,
-      configText,
-      gitRoot: localGitRoot,
-    })
-    await runLocalExecution({
-      goal,
-      opts,
-      spec,
-      runId,
-      localLayout,
-      runtime: {
-        runtime: runtimeOverride === 'codex' ? 'codex' : runtimeOverride === 'claude' ? 'claude' : undefined,
-        codexModel: opts.codexModel,
-        codexReasoningEffort: opts.codexReasoningEffort,
-      },
-      sandboxRepoRoot,
-      brainName,
-      hooks,
-      observeExecution: observeExecutionBackend,
-      downloadDeliverables: downloadLocalDeliverables,
-      downloadRepoPatch: downloadLocalRepoPatch,
-    })
-    return
-  }
-
-  const sandboxEnv = createSandboxRuntimeEnv({
-    opts,
-    db9Token,
-    brainName,
-    runtimeOverride,
-    workspaceRoot,
-    sandboxGitRoot,
-    storySync: spec.storySync,
-    env: hostEnv,
+  console.log('  [2/4] Preparing local workspace...')
+  const localLayout = materializeLocalRunLayout({
+    runId,
+    outputDir: opts.output,
+    projectDir,
+    root,
+    embedded,
+    configText,
+    gitRoot: localGitRoot,
   })
-  await runSandboxExecution({
+  await runLocalExecution({
     goal,
     opts,
     spec,
     runId,
-    workspaceRoot,
-    sandboxRepoRoot,
+    localLayout,
+    runtime: {
+      runtime: runtimeOverride === 'codex' ? 'codex' : runtimeOverride === 'claude' ? 'claude' : undefined,
+      codexModel: opts.codexModel,
+      codexReasoningEffort: opts.codexReasoningEffort,
+    },
     brainName,
     hooks,
-    sandboxEnv,
-    hostEnv,
-    prepareSandbox: async (sandbox) => {
-      if (spec.repoCloneUrl && spec.githubToken && sandboxRepoRoot) {
-        const { setupGitInSandbox, cloneRepo } = await import('./commands/sandbox-git.js')
-        const { runBootstrap } = await import('./commands/runtime-bootstrap.js')
-        console.log('  [4/6] Cloning repo + installing deps...')
-        await setupGitInSandbox(sandbox, spec.githubToken)
-        await cloneRepo(sandbox, spec.repoCloneUrl, sandboxRepoRoot)
-        if (spec.bootstrapScript) {
-          await runBootstrap(sandbox, spec.bootstrapScript, sandboxRepoRoot)
-        }
-      }
-
-      console.log(`  [${spec.repoCloneUrl ? '5' : '4'}/6] Uploading bundle...`)
-      if (projectDir) {
-        const runtimeSource = root ? { root } : { embedded: embedded! }
-        await uploadProjectBundle(sandbox, projectDir, runtimeSource, workspaceRoot)
-      } else if (standalone) {
-        await uploadBundleStandalone(sandbox, embedded!, configName)
-      } else {
-        await uploadBundle(sandbox, root!, selectConfig(root!, opts, db9Token))
-      }
-      if (!spec.repoCloneUrl && repoSourceDir && sandboxRepoRoot) {
-        await uploadRepoSnapshot(sandbox, repoSourceDir, sandboxRepoRoot)
-      }
-
-      console.log('  [5/6] Setting up auth...')
-      await setupAuth(sandbox, {
-        useThirdPartyApi: useThirdPartyApi || useHybrid,
-        runtimes: requiredRuntimes,
-      })
-    },
     observeExecution: observeExecutionBackend,
-    downloadDeliverables,
-    downloadRepoPatch,
+    downloadDeliverables: downloadLocalDeliverables,
+    downloadRepoPatch: downloadLocalRepoPatch,
   })
 }

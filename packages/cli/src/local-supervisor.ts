@@ -5,8 +5,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { AgentMatrixConfig } from '@wanman/core'
 import type { AgentRuntime } from '@wanman/core'
-import type { ExecutionBackend } from './execution-backend.js'
-import { createLocalRuntimeClient } from './runtime-client.js'
+import { createLocalRuntimeClient, type RuntimeClient } from './runtime-client.js'
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 
@@ -22,10 +21,21 @@ export interface LocalSupervisorOptions {
   codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
 }
 
-export interface LocalSupervisorHandle extends ExecutionBackend {
-  kind: 'local'
+export interface LogChunk {
+  lines: string[]
+  cursor: number
+}
+
+export interface LocalSupervisorHandle {
+  runtime: RuntimeClient
+  endpoint: string
+  entrypoint?: string
   port: number
   child: ChildProcess
+  readLogs(cursor: number): Promise<LogChunk>
+  attachSignalForwarding(): () => void
+  stop(force?: boolean): Promise<void>
+  waitForExit(): Promise<void>
 }
 
 function createLocalLogBuffer(maxLines = 200): {
@@ -196,7 +206,6 @@ export async function startLocalSupervisor(opts: LocalSupervisorOptions): Promis
   child.stderr?.on('data', chunk => logBuffer.pushChunk(chunk))
 
   return {
-    kind: 'local',
     port,
     endpoint: `http://127.0.0.1:${port}`,
     runtime: createLocalRuntimeClient(port),

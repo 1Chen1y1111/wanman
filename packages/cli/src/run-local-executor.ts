@@ -26,7 +26,6 @@ export interface LocalRunObservationParams {
   spec: ProjectRunSpec
   runId: string
   workspaceRoot: string
-  sandboxRepoRoot?: string
   brainName?: string
   hooks?: ExecutionHooks
   shouldStop: () => boolean
@@ -39,7 +38,6 @@ export interface LocalRunExecutorParams {
   runId: string
   localLayout: LocalRunLayout
   runtime: LocalRunRuntimeOptions
-  sandboxRepoRoot?: string
   brainName?: string
   hooks?: ExecutionHooks
   observeExecution(params: LocalRunObservationParams): Promise<unknown>
@@ -55,7 +53,6 @@ export async function runLocalExecution(params: LocalRunExecutorParams): Promise
     runId,
     localLayout,
     runtime,
-    sandboxRepoRoot,
     brainName,
     hooks,
   } = params
@@ -109,7 +106,6 @@ export async function runLocalExecution(params: LocalRunExecutorParams): Promise
         spec,
         runId,
         workspaceRoot: localLayout.workspaceRoot,
-        sandboxRepoRoot,
         brainName,
         hooks,
         shouldStop: () => isShuttingDown(),

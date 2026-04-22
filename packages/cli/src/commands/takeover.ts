@@ -9,15 +9,12 @@
  */
 
 import * as fs from 'node:fs'
-import * as path from 'node:path'
 import type { AgentRuntime } from '@wanman/core'
 import {
   type GeneratedAgentConfig,
   type ProjectDocument,
   type ProjectIntent,
   type ProjectProfile,
-  SANDBOX_PROJECT_ROOT,
-  SANDBOX_WORKSPACE_ROOT,
   buildProjectIntent,
   collectProjectDocs,
   detectCI,
@@ -41,11 +38,6 @@ import {
   planLocalDynamicClone,
   runLocal,
 } from '../takeover-local.js'
-import { buildTakeoverExecutionHooks } from '../takeover-hooks.js'
-import { resolveGithubToken } from './sandbox-git.js'
-import { runGoal } from '../run-host.js'
-import { generateBootstrapScript } from './runtime-bootstrap.js'
-import type { ProjectRunSpec } from '../execution-session.js'
 import { parseOptions } from './run.js'
 
 export type {
@@ -82,21 +74,22 @@ const TAKEOVER_HELP = `wanman takeover - Take over an existing git repo
 Usage:
   wanman takeover <path> [options]
 
+Runs the supervisor + agents locally against the target repo. Authenticate
+agent runtimes on the host (e.g. 'claude login' or 'codex login') before
+running.
+
 Options:
   --goal <text>         Override auto-inferred long-running mission
   --runtime <name>      Agent runtime: claude (default) or codex
-  --codex-model <name>  Codex model override for local/sandbox codex runs
+  --codex-model <name>  Codex model override
   --codex-effort <lvl>  Codex reasoning effort: low|medium|high|xhigh
   --codex-speed <lvl>   Alias for --codex-effort using fast|balanced|deep|max
-  --github-token <tok>  GitHub token (default: GITHUB_TOKEN env or gh auth token)
-  --local               Run locally without sandbox (supervisor in current env)
   --dry-run             Scan and generate takeover overlay without launching
   --infinite            Run in infinite mode (default: true)
   --loops <n>           Run finite loops instead of infinite mode
   --poll <seconds>      Poll interval
-  --keep                Keep sandbox alive on exit
+  --keep                Keep supervisor alive on exit
   --output <path>       Deliverables directory
-  --clone-from <id>     Clone an existing sandbox
   --no-brain            Disable db9 brain
 `
 
@@ -104,8 +97,6 @@ function splitTakeoverArgs(args: string[]): {
   projectPath: string
   goalOverride?: string
   runtime: AgentRuntime
-  githubToken?: string
-  local: boolean
   dryRun: boolean
   runArgs: string[]
 } {
@@ -113,8 +104,6 @@ function splitTakeoverArgs(args: string[]): {
   const runArgs: string[] = []
   let goalOverride: string | undefined
   let runtime: AgentRuntime = 'claude'
-  let githubToken: string | undefined
-  let local = false
   let dryRun = false
 
   for (let i = 1; i < args.length; i++) {
@@ -125,12 +114,6 @@ function splitTakeoverArgs(args: string[]): {
         break
       case '--runtime':
         runtime = args[++i] === 'codex' ? 'codex' : 'claude'
-        break
-      case '--github-token':
-        githubToken = args[++i]
-        break
-      case '--local':
-        local = true
         break
       case '--dry-run':
         dryRun = true
@@ -148,7 +131,7 @@ function splitTakeoverArgs(args: string[]): {
     }
   }
 
-  return { projectPath, goalOverride, runtime, githubToken, local, dryRun, runArgs }
+  return { projectPath, goalOverride, runtime, dryRun, runArgs }
 }
 
 function hasExplicitRunMode(runArgs: string[]): boolean {
@@ -182,7 +165,7 @@ export async function takeoverCommand(args: string[]): Promise<void> {
     return
   }
 
-  const { projectPath, goalOverride, runtime, githubToken: explicitToken, local, dryRun, runArgs } = splitTakeoverArgs(args)
+  const { projectPath, goalOverride, runtime, dryRun, runArgs } = splitTakeoverArgs(args)
   if (!fs.existsSync(projectPath)) {
     console.error(`Error: path does not exist: ${projectPath}`)
     process.exit(1)
@@ -200,25 +183,14 @@ export async function takeoverCommand(args: string[]): Promise<void> {
   opts.infinite = true
   opts.loops = Infinity
 
-  const overlayDir = local
-    ? materializeLocalTakeoverProject(profile, generated, { enableBrain: !opts.noBrain })
-    : materializeTakeoverProject(profile, generated, { enableBrain: !opts.noBrain })
+  const overlayDir = materializeLocalTakeoverProject(profile, generated, { enableBrain: !opts.noBrain })
 
-  const githubToken = profile.githubRemote ? resolveGithubToken(explicitToken) : undefined
-  const useGitClone = !!profile.githubRemote && !!githubToken
-  const bootstrapScript = local ? undefined : generateBootstrapScript(profile)
-
-  console.log(`\n  Mode:    ${local ? 'local (no sandbox)' : 'sandbox'}`)
-  console.log(`  Runtime: ${runtime}`)
-  console.log(`  Git:     ${local ? 'local repo' : useGitClone ? `gh clone (${profile.githubRemote})` : 'tar upload (no GitHub remote or token)'}`)
-  if (bootstrapScript) {
-    console.log(`  Bootstrap: ${bootstrapScript.slice(0, 100)}${bootstrapScript.length > 100 ? '...' : ''}`)
-  }
+  console.log(`\n  Runtime: ${runtime}`)
   console.log(`  Goal: ${generated.goal}`)
   console.log('\n  Agents:')
   for (const agent of generated.agents) {
-    const status = agent.enabled ? '✅' : '❌'
-    console.log(`    ${status} ${agent.name} (${agent.lifecycle}) - ${agent.reason}`)
+    const status = agent.enabled ? 'enabled' : 'disabled'
+    console.log(`    [${status}] ${agent.name} (${agent.lifecycle}) - ${agent.reason}`)
   }
   console.log(`\n  Overlay: ${overlayDir}`)
 
@@ -227,23 +199,5 @@ export async function takeoverCommand(args: string[]): Promise<void> {
     return
   }
 
-  if (local) {
-    await runLocal(profile, generated, overlayDir, opts)
-    return
-  }
-
-  const runSpec: ProjectRunSpec = {
-    projectDir: overlayDir,
-    ...(useGitClone
-      ? { repoCloneUrl: profile.githubRemote, githubToken }
-      : { repoSourceDir: profile.path }),
-    sandboxRepoRoot: SANDBOX_PROJECT_ROOT,
-    workspaceRoot: SANDBOX_WORKSPACE_ROOT,
-    gitRoot: SANDBOX_PROJECT_ROOT,
-    bootstrapScript,
-    sourceLabel: `takeover (${path.basename(profile.path)})`,
-    hooks: buildTakeoverExecutionHooks(profile, generated.intent),
-  }
-
-  await runGoal(generated.goal, opts, runSpec)
+  await runLocal(profile, generated, overlayDir, opts)
 }

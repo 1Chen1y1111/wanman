@@ -119,16 +119,6 @@ describe('parseOptions', () => {
     expect(opts.output).toBe('/tmp/out')
   })
 
-  it('should parse --clone-from', () => {
-    const { opts } = parseOptions(['my goal', '--clone-from', 'box-123'])
-    expect(opts.cloneFrom).toBe('box-123')
-  })
-
-  it('should parse --local', () => {
-    const { opts } = parseOptions(['my goal', '--local'])
-    expect(opts.local).toBe(true)
-  })
-
   it('should parse --project-dir', () => {
     const { opts } = parseOptions(['my goal', '--project-dir', '/tmp/my-project'])
     expect(opts.projectDir).toBe('/tmp/my-project')

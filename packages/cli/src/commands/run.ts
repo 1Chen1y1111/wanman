@@ -2,7 +2,6 @@ import { createDefaultRunOptions, type RunOptions } from '@wanman/host-sdk'
 import type { AgentRuntime } from '@wanman/core'
 import { detectProjectDir as detectRunProjectDir, runGoal } from '../run-host.js'
 import {
-  type ExecutionBackend,
   type ExecutionContext,
   type ExecutionHooks,
   type HealthAgent,
@@ -12,7 +11,6 @@ import {
 } from '../execution-session.js'
 
 export type {
-  ExecutionBackend,
   ExecutionContext,
   ExecutionHooks,
   HealthAgent,
@@ -62,8 +60,6 @@ export function parseOptions(args: string[]): { goal: string; opts: RunOptions }
       case '--no-brain': opts.noBrain = true; break
       case '--keep': opts.keep = true; break
       case '--output': opts.output = args[++i]!; break
-      case '--clone-from': opts.cloneFrom = args[++i]; break
-      case '--local': opts.local = true; break
       case '--project-dir': opts.projectDir = args[++i]; break
       case '--infinite': opts.infinite = true; break
       case '--error-limit': opts.errorLimit = parseInt(args[++i]!, 10); break
@@ -86,13 +82,17 @@ If the current directory contains agents.json, it will be used as the
 project directory. Agent skills are loaded from agents/{name}/CLAUDE.md
 and shared skills from skills/{name}/SKILL.md.
 
+The supervisor and agents run directly on the host machine — no sandbox,
+no container. Authenticate agent runtimes on the host (e.g. 'claude login'
+or 'codex login') before running.
+
 Options:
   --loops <n>           Max CEO loops (default: 100)
   --infinite            Run indefinitely (exit via Ctrl+C or error limit)
   --error-limit <n>     Max consecutive error loops before exit (default: 20)
   --poll <seconds>      Poll interval (default: 15)
   --runtime <name>      Agent runtime: claude (default) or codex
-  --codex-model <name>  Codex model override for local/sandbox codex runs
+  --codex-model <name>  Codex model override
   --codex-effort <lvl>  Codex reasoning effort: low|medium|high|xhigh
   --codex-speed <lvl>   Alias for --codex-effort using fast|balanced|deep|max
   --project-dir <path>  Working directory to run against (defaults to current dir)
@@ -100,10 +100,8 @@ Options:
   --worker-model <m>    Worker model name
   --worker-key <key>    Worker API key (default: lmstudio)
   --no-brain            Disable db9 brain
-  --local               Run locally with host runtime instead of sandbox
-  --keep                Keep the execution backend alive on exit
-  --output <path>       Download deliverables to (default: ./deliverables)
-  --clone-from <id>     Clone existing box (inherit credentials)
+  --keep                Keep the supervisor alive on exit
+  --output <path>       Write deliverables to (default: ./deliverables)
 
 Project directory structure:
   agents.json                Agent role definitions
@@ -112,9 +110,6 @@ Project directory structure:
   products.json              Product catalog (optional)
 
 Environment:
-  SANDBANK_URL          Sandbank URL (e.g. http://localhost:3140)
-  SANDBANK_API_KEY      Sandbank API key
-  SANDBANK_CLONE_FROM   Box ID to clone from
   DB9_TOKEN             db9 API token for brain
   ANTHROPIC_BASE_URL    Override CEO LLM endpoint
   WANMAN_RUNTIME        Override agent runtime (claude or codex)

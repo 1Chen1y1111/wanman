@@ -1,6 +1,3 @@
-import type { Sandbox } from '@sandbank.dev/core'
-import { sandboxRpc } from './sandbox-rpc.js'
-
 export interface TaskInfo {
   id: string
   title: string
@@ -168,46 +165,6 @@ export function createLocalRuntimeClient(port: number): RuntimeClient {
     },
     updateTask: async input => {
       await localRpc(port, 'task.update', input)
-    },
-  }
-}
-
-export function createSandboxRuntimeClient(sandbox: Sandbox): RuntimeClient {
-  const getHealth = async (): Promise<RuntimeHealth> => {
-    const result = await sandbox.exec('curl -sf http://localhost:3120/health')
-    return JSON.parse(result.stdout) as RuntimeHealth
-  }
-
-  return {
-    waitForHealth: timeoutMs => waitForHealthWith(getHealth, timeoutMs),
-    getHealth,
-    listTasks: async () => {
-      const result = await sandboxRpc<{ tasks: TaskInfo[] }>(sandbox, 'task.list', {})
-      return result.tasks
-    },
-    listInitiatives: async () => {
-      const result = await sandboxRpc<{ initiatives: RuntimeInitiative[] }>(sandbox, 'initiative.list', {})
-      return result.initiatives
-    },
-    listCapsules: async () => {
-      const result = await sandboxRpc<{ capsules: RuntimeCapsule[] }>(sandbox, 'capsule.list', {})
-      return result.capsules
-    },
-    listArtifacts: async () => {
-      const result = await sandboxRpc<{ artifacts: RuntimeArtifactRecord[] }>(sandbox, 'artifact.list', {})
-      return summarizeArtifacts(result.artifacts)
-    },
-    createInitiative: async input => {
-      await sandboxRpc(sandbox, 'initiative.create', input)
-    },
-    sendMessage: async input => {
-      await sandboxRpc(sandbox, 'agent.send', input)
-    },
-    spawnAgent: async (template, name) => {
-      await sandboxRpc(sandbox, 'agent.spawn', { template, name })
-    },
-    updateTask: async input => {
-      await sandboxRpc(sandbox, 'task.update', input)
     },
   }
 }

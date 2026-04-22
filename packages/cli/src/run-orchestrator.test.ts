@@ -4,7 +4,6 @@ import * as path from 'node:path'
 import {
   buildRunBrainName,
   createRunSessionPlan,
-  createSandboxRuntimeEnv,
   createRunLaunchPlan,
   getRunSourceLabel,
   resolveRequestedProjectDir,
@@ -36,7 +35,7 @@ describe('run orchestrator helpers', () => {
     expect(result).toBe(path.resolve('./tmp/project'))
   })
 
-  it('derives launch defaults for sandbox and local git roots', () => {
+  it('derives launch defaults for the local git root', () => {
     mockExistsSync.mockReturnValue(true)
     mockStatSync.mockReturnValue({ isDirectory: () => true } as fs.Stats)
 
@@ -48,29 +47,20 @@ describe('run orchestrator helpers', () => {
     expect(plan.requestedProjectDir).toBe(path.resolve('./tmp/project'))
     expect(plan.projectDir).toBe('/tmp/overlay')
     expect(plan.repoSourceDir).toBe(path.resolve('./tmp/project'))
-    expect(plan.sandboxRepoRoot).toBe('/workspace/project')
-    expect(plan.sandboxGitRoot).toBe('/workspace/project')
     expect(plan.localGitRoot).toBe(path.resolve('./tmp/project'))
-    expect(plan.workspaceRoot).toBe('/workspace/agents')
   })
 
-  it('respects explicit repo and workspace overrides', () => {
+  it('respects explicit git root and repo source overrides', () => {
     const plan = createRunLaunchPlan(
       { projectDir: undefined },
       {
-        repoCloneUrl: 'https://github.com/example/example-repo',
         repoSourceDir: '/tmp/source',
-        sandboxRepoRoot: '/workspace/repo',
-        workspaceRoot: '/workspace/custom-agents',
-        gitRoot: '/workspace/repo',
+        gitRoot: '/tmp/source',
       },
     )
 
     expect(plan.repoSourceDir).toBe('/tmp/source')
-    expect(plan.sandboxRepoRoot).toBe('/workspace/repo')
-    expect(plan.sandboxGitRoot).toBe('/workspace/repo')
-    expect(plan.localGitRoot).toBe('/workspace/repo')
-    expect(plan.workspaceRoot).toBe('/workspace/custom-agents')
+    expect(plan.localGitRoot).toBe('/tmp/source')
   })
 
   it('describes the resolved run source consistently', () => {
@@ -117,53 +107,6 @@ describe('run orchestrator helpers', () => {
     expect(plan.codexConfigLabel).toBe('gpt-5.4 / default')
     expect(plan.brainName).toMatch(/^wanman-run-/)
     expect(plan.runId).toBe(plan.brainName)
-  })
-
-  it('builds sandbox runtime env from opts and process env defaults', () => {
-    const env = createSandboxRuntimeEnv({
-      opts: {
-        codexModel: undefined,
-        codexReasoningEffort: 'high',
-        workerUrl: 'https://worker.example.com',
-        workerKey: 'worker-key',
-        workerModel: 'gpt-worker',
-      },
-      db9Token: 'db9-token',
-      brainName: 'wanman-run-test',
-      runtimeOverride: 'codex',
-      workspaceRoot: '/workspace/custom-agents',
-      sandboxGitRoot: '/workspace/project',
-      storySync: {
-        storyId: 'story-1',
-        syncUrl: 'https://api.example.com/api/sync',
-        syncSecret: 'sync-secret',
-      },
-      env: {
-        ANTHROPIC_BASE_URL: 'https://api.example.com',
-        ANTHROPIC_AUTH_TOKEN: 'anthropic-token',
-        WANMAN_CODEX_MODEL: 'gpt-5.4',
-        WANMAN_MODEL: 'fallback-model',
-      },
-    })
-
-    expect(env).toMatchObject({
-      DB9_TOKEN: 'db9-token',
-      WANMAN_BRAIN_NAME: 'wanman-run-test',
-      ANTHROPIC_BASE_URL: 'https://api.example.com',
-      ANTHROPIC_AUTH_TOKEN: 'anthropic-token',
-      WANMAN_RUNTIME: 'codex',
-      WANMAN_CODEX_MODEL: 'gpt-5.4',
-      WANMAN_CODEX_REASONING_EFFORT: 'high',
-      WANMAN_MODEL: 'fallback-model',
-      WANMAN_WORKSPACE: '/workspace/custom-agents',
-      WANMAN_GIT_ROOT: '/workspace/project',
-      WANMAN_STORY_ID: 'story-1',
-      WANMAN_SYNC_URL: 'https://api.example.com/api/sync',
-      WANMAN_SYNC_SECRET: 'sync-secret',
-      WANMAN_WORKER_BASE_URL: 'https://worker.example.com',
-      WANMAN_WORKER_API_KEY: 'worker-key',
-      WANMAN_WORKER_MODEL: 'gpt-worker',
-    })
   })
 
   it('generates stable brain names from goals', () => {
