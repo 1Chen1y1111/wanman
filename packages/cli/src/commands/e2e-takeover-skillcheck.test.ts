@@ -1,7 +1,7 @@
 /**
  * E2E test: takeover scanner on real projects + skill:check on real skills.
  *
- * Uses the wanman.ai repo itself as the test subject — no mocks.
+ * Uses the wanman.dev monorepo itself as the test subject — no mocks.
  * Run: pnpm -F @wanman/cli test e2e-takeover-skillcheck
  */
 
@@ -13,7 +13,7 @@ import { checkAllSkills, checkSkill } from './skill-check.js'
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..')
 const SKILLS_DIR = path.join(PROJECT_ROOT, 'packages', 'core', 'skills')
 
-describe('takeover scanner E2E — wanman.ai itself', () => {
+describe('takeover scanner E2E — wanman.dev itself', () => {
   it('should detect TypeScript + JavaScript', () => {
     const profile = scanProject(PROJECT_ROOT)
     expect(profile.languages).toContain('typescript')

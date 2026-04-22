@@ -58,7 +58,7 @@ describe('run orchestrator helpers', () => {
     const plan = createRunLaunchPlan(
       { projectDir: undefined },
       {
-        repoCloneUrl: 'https://github.com/wanman/wanman.ai',
+        repoCloneUrl: 'https://github.com/example/example-repo',
         repoSourceDir: '/tmp/source',
         sandboxRepoRoot: '/workspace/repo',
         workspaceRoot: '/workspace/custom-agents',

@@ -1240,7 +1240,7 @@ export async function runExecutionSession(
   if (root) loadEnvFile(root, hostEnv)
   if (!projectDir && !root && !embedded) {
     throw new Error(
-      'Cannot find agents.json in current directory, wanman.ai project root, or embedded assets.\n'
+      'Cannot find agents.json in current directory, monorepo root, or embedded assets.\n'
       + 'Either cd into a project directory with agents.json, run from the monorepo, or use the standalone binary.',
     )
   }
