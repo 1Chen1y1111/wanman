@@ -12,8 +12,7 @@ This walks through a complete first-run of wanman against any git repo on your m
 - **Any existing git repository** you're willing to let agents read and scribble in. wanman will copy it into an isolated worktree and never mutate your dirty checkout.
 
 Optional:
-- BoxLite, if you want microVM isolation — see [local-sandbox.md](local-sandbox.md).
-- A `@sandbank.dev/db9` brain, if you want cross-run memory — see [architecture.md](architecture.md#brain--persistence).
+- A `@sandbank.dev/db9` brain adapter, if you want cross-run memory — see [architecture.md](architecture.md#brain--persistence).
 
 ## 2. Clone, install, build
 
@@ -122,6 +121,5 @@ Your real working tree is untouched — wanman only ever wrote inside `.wanman/`
 
 ## 7. Where next
 
-- Want microVM isolation so a misbehaving agent can't touch your `$HOME`? See [local-sandbox.md](local-sandbox.md).
 - Want to understand the JSON-RPC protocol, message priorities, and agent lifecycles? See [architecture.md](architecture.md).
 - Want to contribute? See [CONTRIBUTING.md](../CONTRIBUTING.md).

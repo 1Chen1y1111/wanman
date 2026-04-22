@@ -28,9 +28,6 @@ deliverables/
 # E2E test fixtures (synced from external projects)
 **/__fixtures__/
 
-# Local sandbox state
-.local-sandbox.json
-
 # Worktrees
 .worktrees/
 

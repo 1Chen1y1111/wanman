@@ -6,7 +6,7 @@ This document is the tour a developer new to the wanman codebase should read fir
 
 ```
 +----------------+              +--------------------------------+
-|  wanman CLI    |              |  Supervisor process            |
+|  wanman CLI    |              |  Supervisor process (local)    |
 |  (host shell)  |  JSON-RPC    |                                |
 |                | -----------> |  MessageStore  ContextStore    |
 |  send/recv/    |  HTTP :3120  |  TaskPool      ArtifactStore   |
@@ -26,9 +26,7 @@ This document is the tour a developer new to the wanman codebase should read fir
                                     (per-agent worktree + $HOME)
 ```
 
-The CLI is a thin JSON-RPC 2.0 client. Everything interesting — process management, persistence, routing — lives in the supervisor.
-
-The same supervisor binary runs both on the host (for `wanman takeover` and `wanman run`) and inside a BoxLite microVM (for [local-sandbox.md](local-sandbox.md) mode). The CLI is unaware of the deployment mode; it just speaks to `WANMAN_URL`.
+The CLI is a thin JSON-RPC 2.0 client. Everything interesting — process management, persistence, routing — lives in the supervisor. The supervisor is a plain local Node.js process; the CLI only needs `WANMAN_URL` to reach it.
 
 ## 2. Agent lifecycles
 
@@ -170,7 +168,7 @@ Both adapters emit the same `AgentRunEvent` stream, so the supervisor and CLI do
 
 Before spawning the first child, the supervisor sets up, per agent:
 
-- A **worktree** materialized from the current `HEAD` under `.wanman/worktree/` (takeover mode) or `/workspace/agents/<name>/` (container mode). Agents edit this, not your real checkout.
+- A **worktree** materialized from the current `HEAD` under `.wanman/worktree/`. Agents edit this, not your real checkout.
 - A **per-agent `$HOME`** under `.wanman/home/<agent>/` with generated `wanman` and `pnpm` wrappers. Shell profile writes, `.npmrc` edits, etc. stay contained.
 - A **per-agent `.claude/`** (or `.codex/`) under that home, so the two agents don't step on each other's CLI state.
 
@@ -178,7 +176,7 @@ The `wanman` wrapper inside each agent's `$PATH` points at the same CLI binary b
 
 ## 9. Shared skills
 
-`packages/core/skills/*/SKILL.md` are bundled into the Dockerfile at `/opt/wanman/shared-skills/`. At supervisor startup, `setupSharedSkills()` (in `shared-skill-manager.ts`) materializes them into each agent's `~/.claude/skills/` so Claude Code auto-discovers them.
+`packages/core/skills/*/SKILL.md` ship alongside the runtime bundle. At supervisor startup, `setupSharedSkills()` (in `shared-skill-manager.ts`) materializes them into each agent's `~/.claude/skills/` so Claude Code auto-discovers them.
 
 Skill snapshots — immutable copies tied to a specific run — are written to the directory resolved by `WANMAN_SKILL_SNAPSHOTS_DIR`, or a sibling of the shared-skills dir, or `$TMPDIR/wanman-skill-snapshots` as a last resort. This is the mechanism that lets you audit exactly which skill version an agent had available for a given task.
 
@@ -194,7 +192,7 @@ Skills shipped today:
 Two persistence layers, both optional to the agent code:
 
 - **Local SQLite (`dbPath` in agents config)** — always present. Messages, context, tasks, artifacts, hypotheses, capsules. Durable across supervisor restarts inside the same workspace.
-- **`@sandbank.dev/db9` brain (optional)** — if the runtime is configured with a db9 connection (token + db name), it mirrors artifacts and context to a cross-run, cross-machine store. Useful for fleets of supervisors sharing memory, or for post-run analysis. The OSS build treats db9 as an optional peer dependency — missing it just disables the mirror.
+- **`@sandbank.dev/db9` brain adapter (optional)** — if the runtime is configured with a db9 connection (token + db name), it mirrors artifacts and context to a cross-run, cross-machine store. Useful for fleets of supervisors sharing memory, or for post-run analysis. The OSS build treats db9 as an optional peer dependency — missing it just disables the mirror.
 
 ## 11. HTTP surface at a glance
 
@@ -227,8 +225,6 @@ packages/
   host-sdk/    Programmatic embedding SDK for host-side integrations.
   runtime/     The supervisor. Agent process manager, SQLite stores,
                Claude/Codex adapters, cron scheduler, event router.
-apps/
-  container/   Dockerfile + agents.example.json for sandboxed deploys.
 ```
 
-For the CLI surface and env vars, see the [README](../README.md#cli-commands). For running the matrix inside a microVM, see [local-sandbox.md](local-sandbox.md).
+For the CLI surface and env vars, see the [README](../README.md#cli-commands).

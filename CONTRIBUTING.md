@@ -78,17 +78,16 @@ Where `<type>` is one of:
 | `docs` | Documentation changes. |
 | `chore` | Tooling, deps, housekeeping. |
 
-And `<scope>` is the package or area touched: `cli`, `runtime`, `core`, `host-sdk`, `container`, `skills`. Multiple scopes are comma-separated, e.g. `fix(runtime,cli): ...`.
+And `<scope>` is the package or area touched: `cli`, `runtime`, `core`, `host-sdk`, `skills`. Multiple scopes are comma-separated, e.g. `fix(runtime,cli): ...`.
 
-Examples from the repo history:
+Examples:
 
 ```
-feat(container): reference Dockerfile + echo/ping example agents
 fix(runtime): make skill-snapshots path configurable
-refactor(cli): strip control-plane commands, Daytona adapter
-test(runtime): drop SaaS-only production-agents imports
+refactor(cli): strip control-plane commands
+test(runtime): drop production-agent imports
 chore(skills): drop wanman-specific skills, keep generic ones
-docs: README, quickstart, local-sandbox, architecture, contributing
+docs: README, quickstart, architecture, contributing
 ```
 
 Keep the summary under ~72 characters. Use the body for context, motivation, and links.
@@ -96,7 +95,7 @@ Keep the summary under ~72 characters. Use the body for context, motivation, and
 ## Filing issues and pull requests
 
 - Issues and PRs are tracked on the project's GitHub repository. (Repo URL will be published with the first tagged release; until then, coordinate with the maintainers.)
-- For bugs, include: reproduction steps, expected vs actual behavior, wanman version (commit SHA), Node version, and relevant env vars (`WANMAN_RUNTIME`, `BOXLITE_*`).
+- For bugs, include: reproduction steps, expected vs actual behavior, wanman version (commit SHA), Node version, and relevant env vars (`WANMAN_RUNTIME`, `WANMAN_URL`).
 - For PRs, describe the motivation, list the files touched, and link the issue if one exists.
 
 ## License

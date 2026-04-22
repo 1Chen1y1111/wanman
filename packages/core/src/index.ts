@@ -13,7 +13,6 @@ export type {
   AgentMessage,
   ContextEntry,
   BrainConfig,
-  RelayConfig,
   AgentMatrixConfig,
   ExternalEvent,
   Initiative,

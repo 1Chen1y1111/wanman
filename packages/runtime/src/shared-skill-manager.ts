@@ -14,15 +14,11 @@ const log = createLogger('shared-skill-manager')
  * Resolution order:
  *   1. Explicit `snapshotsRoot` argument (highest priority — tests/host override).
  *   2. `WANMAN_SKILL_SNAPSHOTS_DIR` env var.
- *   3. Sibling of `sharedSkillsDir` (e.g. `/opt/wanman/skill-snapshots` next to
- *      `/opt/wanman/shared-skills`) iff that sibling is writable by the
- *      current process. This is the in-container default and matches the
- *      wanman.ai container layout.
+ *   3. Sibling of `sharedSkillsDir` (e.g. `<parent>/skill-snapshots` next to
+ *      `<parent>/shared-skills`) iff that sibling is writable by the
+ *      current process.
  *   4. `${os.tmpdir()}/wanman-skill-snapshots` — always writable, safe for
- *      unprivileged OSS consumers running outside of a container.
- *
- * OSS consumers running `wanman` on a regular host should NOT hit a
- * privileged path (/opt/wanman requires root to mkdir on most systems).
+ *      unprivileged OSS consumers.
  */
 function resolveSnapshotsRoot(sharedSkillsDir: string, explicit?: string): string {
   if (explicit) return explicit

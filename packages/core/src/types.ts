@@ -75,12 +75,6 @@ export interface BrainConfig {
   baseUrl?: string;
 }
 
-/** Sandbank relay config */
-export interface RelayConfig {
-  /** Relay port (default: 3122) */
-  port?: number;
-}
-
 /** Top-level config loaded from agents.json */
 export interface AgentMatrixConfig {
   agents: AgentDefinition[];
@@ -94,8 +88,6 @@ export interface AgentMatrixConfig {
   gitRoot?: string;
   /** db9 Brain persistent memory config (optional) */
   brain?: BrainConfig;
-  /** Sandbank relay config. If present, uses Sandbank relay instead of SQLite. */
-  relay?: RelayConfig;
   /** Top-level goal for the CEO agent to pursue autonomously */
   goal?: string;
 }
