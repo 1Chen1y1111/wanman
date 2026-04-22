@@ -2,7 +2,7 @@
  * Supervisor — main coordinator for the Agent Matrix.
  *
  * Responsibilities:
- * 1. Initialize message relay + context store (SQLite or Sandbank)
+ * 1. Initialize message relay + context store (in-process SQLite)
  * 2. Create AgentProcess instances from config
  * 3. Handle JSON-RPC requests from wanman CLI
  * 4. Handle external events (webhooks, cron)
@@ -50,8 +50,6 @@ import { MessageStore } from './message-store.js';
 import { ContextStore } from './context-store.js';
 import { Relay } from './relay.js';
 import { buildEnrichedPrompt } from './config.js';
-import { SandbankRelayBridge } from './sandbank-relay-bridge.js';
-import { SandbankContextBridge } from './sandbank-context-bridge.js';
 import { AgentProcess } from './agent-process.js';
 import { CronScheduler } from './cron-scheduler.js';
 import { type CredentialManager } from './credential-manager.js';
@@ -184,8 +182,6 @@ export class Supervisor {
   private capsulePool!: ChangeCapsulePool;
   private cronScheduler!: CronScheduler;
   private httpServer: http.Server | null = null;
-  /** Sandbank relay server close function (only when using relay mode). */
-  private relayServerClose: (() => Promise<void>) | null = null;
   /** Loop-level event bus for observability */
   private _eventBus: LoopEventBus | null = null;
   /** Token consumption tracker */
@@ -216,13 +212,9 @@ export class Supervisor {
       this.brainManager = new BrainManager(config.brain);
     }
 
-    // When using Sandbank relay, defer store initialization to start() (async).
-    // When using SQLite, initialize synchronously in constructor (existing behavior).
-    if (!config.relay) {
-      this.initSqlite(config);
-      this.wireSteerCallback();
-      this.initCronScheduler();
-    }
+    this.initSqlite(config);
+    this.wireSteerCallback();
+    this.initCronScheduler();
   }
 
   /** Public accessor for the loop event bus (null until initEventBus is called) */
@@ -697,22 +689,6 @@ ${activePaths}`;
     const gitRoot = this.config.gitRoot || process.env['WANMAN_GIT_ROOT']
       || workspaceRoot.replace(/\/agents\/?$/, '') || workspaceRoot;
 
-    // Initialize Sandbank relay if configured
-    if (this.config.relay) {
-      await this.initSandbankRelay();
-      this.wireSteerCallback();
-      this.initCronScheduler();
-      // TaskPool still needs a shared local SQLite DB in relay mode so
-      // task create/update/get/list survive supervisor restarts.
-      if (!this.taskPool) {
-        const dbPath = this.config.dbPath || '/tmp/wanman.db';
-        this.db = this.openDatabase(dbPath);
-        this.taskPool = new TaskPool(this.db);
-        this.initiativeBoard = new InitiativeBoard(this.db);
-        this.capsulePool = new ChangeCapsulePool(this.db);
-      }
-    }
-
     // Initialize Brain (before creating agent processes)
     if (this.brainManager) {
       await this.brainManager.initialize();
@@ -836,38 +812,6 @@ ${activePaths}`;
     });
   }
 
-  /** Initialize Sandbank relay server and bridge classes. */
-  private async initSandbankRelay(): Promise<void> {
-    const relayPort = this.config.relay!.port ?? 3122;
-    log.info('starting sandbank relay', { port: relayPort });
-
-    // Dynamic import — only needed when relay is configured
-    const { startRelay } = await import('@sandbank.dev/relay');
-    const server = await startRelay({ port: relayPort });
-
-    this.relayServerClose = () => server.close();
-    log.info('sandbank relay started', { url: server.url, wsUrl: server.wsUrl });
-
-    const agentNames = this.config.agents.map(a => a.name);
-
-    // Create relay bridge
-    const bridge = new SandbankRelayBridge({
-      relayUrl: server.url,
-      wsUrl: server.wsUrl,
-      agents: agentNames,
-    });
-
-    await bridge.initialize();
-    this.relay = bridge;
-
-    // Create context bridge using the same session credentials
-    this.contextStore = new SandbankContextBridge({
-      relayUrl: server.url,
-      sessionId: bridge.sessionId,
-      token: bridge.token,
-    });
-  }
-
   /** Handle a JSON-RPC request (synchronous methods). */
   handleRpc(req: JsonRpcRequest): JsonRpcResponse {
     const params = req.params || {};
@@ -916,9 +860,6 @@ ${activePaths}`;
       }
 
       case RPC_METHODS.AGENT_RECV: {
-        if (this.relay instanceof SandbankRelayBridge) {
-          return createRpcError(req.id, RPC_ERRORS.INTERNAL_ERROR, 'Use handleRpcAsync for relay mode');
-        }
         const { agent, limit } = params as unknown as AgentRecvParams;
         if (!agent) {
           return createRpcError(req.id, RPC_ERRORS.INVALID_PARAMS, 'Missing "agent"');
@@ -938,9 +879,6 @@ ${activePaths}`;
       }
 
       case RPC_METHODS.CONTEXT_GET: {
-        if (this.contextStore instanceof SandbankContextBridge) {
-          return createRpcError(req.id, RPC_ERRORS.INTERNAL_ERROR, 'Use handleRpcAsync for relay mode');
-        }
         const { key } = params as unknown as ContextGetParams;
         if (!key) {
           return createRpcError(req.id, RPC_ERRORS.INVALID_PARAMS, 'Missing "key"');
@@ -950,9 +888,6 @@ ${activePaths}`;
       }
 
       case RPC_METHODS.CONTEXT_SET: {
-        if (this.contextStore instanceof SandbankContextBridge) {
-          return createRpcError(req.id, RPC_ERRORS.INTERNAL_ERROR, 'Use handleRpcAsync for relay mode');
-        }
         const { key, value, agent } = params as unknown as ContextSetParams;
         if (!key || value === undefined) {
           return createRpcError(req.id, RPC_ERRORS.INVALID_PARAMS, 'Missing "key" or "value"');
@@ -962,9 +897,6 @@ ${activePaths}`;
       }
 
       case RPC_METHODS.CONTEXT_LIST: {
-        if (this.contextStore instanceof SandbankContextBridge) {
-          return createRpcError(req.id, RPC_ERRORS.INTERNAL_ERROR, 'Use handleRpcAsync for relay mode');
-        }
         const entries = (this.contextStore as ContextStore).getAll();
         return createRpcResponse(req.id, { entries });
       }
@@ -1018,7 +950,7 @@ ${activePaths}`;
         return createRpcResponse(req.id, info);
       }
 
-      // AGENT_RECV — async when using SandbankRelayBridge, sync for local Relay
+      // AGENT_RECV — local Relay returns sync, resolveMaybePromise handles both
       case RPC_METHODS.AGENT_RECV: {
         const { agent, limit } = params as unknown as AgentRecvParams;
         if (!agent) {
@@ -1030,7 +962,7 @@ ${activePaths}`;
         });
       }
 
-      // CONTEXT_GET — async when using SandbankContextBridge
+      // CONTEXT_GET — local ContextStore returns sync, resolveMaybePromise handles both
       case RPC_METHODS.CONTEXT_GET: {
         const { key } = params as unknown as ContextGetParams;
         if (!key) {
@@ -1040,7 +972,7 @@ ${activePaths}`;
         return createRpcResponse(req.id, entry);
       }
 
-      // CONTEXT_SET — async when using SandbankContextBridge
+      // CONTEXT_SET — local ContextStore returns sync, resolveMaybePromise handles both
       case RPC_METHODS.CONTEXT_SET: {
         const { key, value, agent } = params as unknown as ContextSetParams;
         if (!key || value === undefined) {
@@ -1050,7 +982,7 @@ ${activePaths}`;
         return createRpcResponse(req.id, { status: 'ok' });
       }
 
-      // CONTEXT_LIST — async when using SandbankContextBridge
+      // CONTEXT_LIST — local ContextStore returns sync, resolveMaybePromise handles both
       case RPC_METHODS.CONTEXT_LIST: {
         const entries = await resolveMaybePromise(this.contextStore.getAll());
         return createRpcResponse(req.id, { entries });
@@ -2018,15 +1950,7 @@ ${activePaths}`;
       });
     }
 
-    // Close Sandbank relay bridge and server
-    if (this.relay instanceof SandbankRelayBridge) {
-      await this.relay.close();
-    }
-    if (this.relayServerClose) {
-      await this.relayServerClose();
-    }
-
-    // Close database (SQLite mode only)
+    // Close database
     if (this.db) {
       this.db.close();
     }

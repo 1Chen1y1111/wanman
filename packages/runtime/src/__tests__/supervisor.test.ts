@@ -4,10 +4,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-import Database from 'better-sqlite3'
 import type { AgentMatrixConfig, JsonRpcRequest } from '@wanman/core'
 import { RPC_METHODS, RPC_ERRORS } from '@wanman/core'
 import { Supervisor } from '../supervisor.js'
@@ -20,37 +16,6 @@ vi.mock('../http-server.js', () => ({
   createHttpServer: vi.fn(() => ({
     close: (cb: () => void) => cb(),
   })),
-}))
-
-vi.mock('@sandbank.dev/relay', () => ({
-  startRelay: vi.fn(async () => ({
-    url: 'http://relay.test',
-    wsUrl: 'ws://relay.test',
-    close: async () => {},
-  })),
-}))
-
-vi.mock('../sandbank-relay-bridge.js', () => ({
-  SandbankRelayBridge: class MockSandbankRelayBridge {
-    sessionId = 'relay-session'
-    token = 'relay-token'
-    async initialize() {}
-    async close() {}
-    send() { return 'relay-message-id' }
-    async recv() { return [] }
-    hasSteer() { return false }
-    countPending() { return 0 }
-    setSteerCallback() {}
-    setNewMessageCallback() {}
-  },
-}))
-
-vi.mock('../sandbank-context-bridge.js', () => ({
-  SandbankContextBridge: class MockSandbankContextBridge {
-    async get() { return null }
-    async set() {}
-    async list() { return [] }
-  },
 }))
 
 // Track whether start should fail
@@ -629,67 +594,6 @@ describe('Supervisor', () => {
 
       expect(second.error?.code).toBe(RPC_ERRORS.INVALID_PARAMS)
       expect(second.error?.message).toMatch(/conflicts with active task/i)
-    })
-
-    it('persists task status and assignee updates across relay-mode supervisor restarts', async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'wanman-relay-task-db-'))
-      const dbPath = join(dir, 'tasks.sqlite')
-      const relayConfig = makeConfig({ relay: { port: 0 }, dbPath })
-      const first = new Supervisor(relayConfig, { headless: true })
-
-      try {
-        await first.start()
-
-        const createRes = await first.handleRpcAsync(rpc(RPC_METHODS.TASK_CREATE, {
-          title: 'Persist relay task',
-          assignee: 'ping',
-          priority: 4,
-        } as unknown as Record<string, unknown>))
-        expect(createRes.error).toBeUndefined()
-
-        const createdTask = createRes.result as { id: string }
-        const updateRes = await first.handleRpcAsync(rpc(RPC_METHODS.TASK_UPDATE, {
-          id: createdTask.id,
-          status: 'done',
-          assignee: 'echo',
-          result: 'persisted across restart',
-        }))
-        expect(updateRes.error).toBeUndefined()
-
-        await first.shutdown()
-
-        const second = new Supervisor(relayConfig, { headless: true })
-        try {
-          await second.start()
-
-          const getRes = await second.handleRpcAsync(rpc(RPC_METHODS.TASK_GET, { id: createdTask.id }))
-          expect(getRes.error).toBeUndefined()
-          expect(getRes.result).toMatchObject({
-            id: createdTask.id,
-            status: 'done',
-            assignee: 'echo',
-            result: 'persisted across restart',
-          })
-
-          const listRes = await second.handleRpcAsync(rpc(RPC_METHODS.TASK_LIST, { assignee: 'echo' }))
-          expect(listRes.error).toBeUndefined()
-          expect((listRes.result as { tasks: Array<{ id: string; status: string; assignee?: string }> }).tasks).toEqual([
-            expect.objectContaining({
-              id: createdTask.id,
-              status: 'done',
-              assignee: 'echo',
-            }),
-          ])
-
-          const oldAssigneeList = await second.handleRpcAsync(rpc(RPC_METHODS.TASK_LIST, { assignee: 'ping' }))
-          expect(oldAssigneeList.error).toBeUndefined()
-          expect((oldAssigneeList.result as { tasks: unknown[] }).tasks).toHaveLength(0)
-        } finally {
-          await second.shutdown()
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
     })
 
     it('drops stale task assignment delivery after reassignment before recv', async () => {

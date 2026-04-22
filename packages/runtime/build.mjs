@@ -7,7 +7,7 @@ await build({
   target: 'node20',
   format: 'esm',
   outfile: 'dist/entrypoint.js',
-  external: ['better-sqlite3', '@sandbank.dev/db9', '@sandbank.dev/relay'],
+  external: ['better-sqlite3', '@sandbank.dev/db9'],
   banner: {
     js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
   },
