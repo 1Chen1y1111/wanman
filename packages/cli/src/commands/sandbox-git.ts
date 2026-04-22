@@ -46,7 +46,7 @@ export async function setupGitInSandbox(sandbox: Sandbox, token: string): Promis
 
   // Set git identity for commits
   await sandbox.exec('git config --global user.name "wanman-agent"')
-  await sandbox.exec('git config --global user.email "agent@wanman.ai"')
+  await sandbox.exec('git config --global user.email "agent@wanman.dev"')
 
   // Sensible defaults
   await sandbox.exec('git config --global push.autoSetupRemote true')

@@ -247,7 +247,7 @@ describe('Supervisor flow integration', () => {
       const commitCmd = cmds.find(c => c.startsWith('git commit'))
       expect(commitCmd).toBeDefined()
       expect(commitCmd).toContain('dev: Build website')
-      expect(commitCmd).toContain('--author="dev-agent <dev@wanman.ai>"')
+      expect(commitCmd).toContain('--author="dev-agent <dev@wanman.dev>"')
     })
 
     it('should NOT trigger git auto-commit for non-done status updates', async () => {

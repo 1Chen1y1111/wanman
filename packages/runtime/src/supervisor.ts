@@ -1828,7 +1828,7 @@ ${activePaths}`;
         // Mark workspace as safe (avoids "dubious ownership" when root inits, agent user commits)
         execSync(`git config --global --add safe.directory ${wsRoot}`, { cwd: wsRoot, stdio: 'pipe' });
         // Configure git identity for the workspace (required in containers)
-        execSync('git config user.email "agents@wanman.ai"', { cwd: wsRoot, stdio: 'pipe' });
+        execSync('git config user.email "agents@wanman.dev"', { cwd: wsRoot, stdio: 'pipe' });
         execSync('git config user.name "wanman agents"', { cwd: wsRoot, stdio: 'pipe' });
         execSync('git add -A', { cwd: wsRoot, stdio: 'pipe' });
         execSync('git commit -m "init: workspace initialized" --allow-empty', { cwd: wsRoot, stdio: 'pipe' });
@@ -1873,7 +1873,7 @@ ${activePaths}`;
 
       const title = taskTitle.slice(0, 72).replace(/"/g, '\\"');
       const msg = `${assignee}: ${title}`;
-      execSync(`git commit -m "${msg}" --author="${assignee}-agent <${assignee}@wanman.ai>"`, { cwd, stdio: 'pipe' });
+      execSync(`git commit -m "${msg}" --author="${assignee}-agent <${assignee}@wanman.dev>"`, { cwd, stdio: 'pipe' });
       // Get the commit SHA
       const sha = execSync('git rev-parse --short HEAD', { cwd, encoding: 'utf-8' }).trim();
       log.info('git auto-commit', { assignee, sha, files: staged.split('\n').length });

@@ -98,7 +98,7 @@ describe('Supervisor initWorkspaceGit', () => {
 
     const allCmds = cmds()
     expect(allCmds).toContain('git init')
-    expect(allCmds).toContain('git config user.email "agents@wanman.ai"')
+    expect(allCmds).toContain('git config user.email "agents@wanman.dev"')
     expect(allCmds).toContain('git config user.name "wanman agents"')
     expect(allCmds).toContain('git add -A')
     expect(allCmds.find(c => c.includes('git commit'))).toContain('init: workspace initialized')
@@ -237,7 +237,7 @@ describe('Supervisor gitAutoCommit', () => {
     const commitCmd = cmds().find(c => c.startsWith('git commit'))
     expect(commitCmd).toBeDefined()
     expect(commitCmd).toContain('dev: website build')
-    expect(commitCmd).toContain('--author="dev-agent <dev@wanman.ai>"')
+    expect(commitCmd).toContain('--author="dev-agent <dev@wanman.dev>"')
   })
 
   it('should truncate long task titles to 72 chars', () => {
