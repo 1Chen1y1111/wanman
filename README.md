@@ -1,5 +1,7 @@
 # wanman
 
+**English** | [中文](README.zh.md) | [日本語](README.ja.md)
+
 Agent Matrix framework — run a supervised network of Claude Code or Codex agents that collaborate on your machine.
 
 wanman is an open-source local-mode agent matrix framework. Runs a supervised network of Claude Code or Codex agents on your machine, coordinated through a JSON-RPC supervisor.
@@ -15,7 +17,7 @@ wanman is an open-source local-mode agent matrix framework. Runs a supervised ne
 
 ```bash
 # Prerequisites: Node 20+, pnpm 9+, git, a logged-in Claude Code or Codex CLI.
-git clone <repo> wanman.dev
+git clone git@github.com:chekusu/wanman.git wanman.dev
 cd wanman.dev
 pnpm install
 pnpm build

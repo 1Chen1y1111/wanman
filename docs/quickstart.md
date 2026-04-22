@@ -1,5 +1,7 @@
 # Quickstart
 
+**English** | [中文](quickstart.zh.md) | [日本語](quickstart.ja.md)
+
 This walks through a complete first-run of wanman against any git repo on your machine.
 
 ## 1. Prerequisites
@@ -17,7 +19,7 @@ Optional:
 ## 2. Clone, install, build
 
 ```bash
-git clone <repo-url> wanman.dev
+git clone git@github.com:chekusu/wanman.git wanman.dev
 cd wanman.dev
 pnpm install
 pnpm build

@@ -1,5 +1,7 @@
 # Contributing to wanman
 
+**English** | [中文](CONTRIBUTING.zh.md) | [日本語](CONTRIBUTING.ja.md)
+
 Thanks for hacking on wanman. This repo is a pnpm + Turborepo TypeScript monorepo targeting Node 20+.
 
 ## Prerequisites
@@ -94,7 +96,7 @@ Keep the summary under ~72 characters. Use the body for context, motivation, and
 
 ## Filing issues and pull requests
 
-- Issues and PRs are tracked on the project's GitHub repository. (Repo URL will be published with the first tagged release; until then, coordinate with the maintainers.)
+- Issues and PRs are tracked at [github.com/chekusu/wanman](https://github.com/chekusu/wanman).
 - For bugs, include: reproduction steps, expected vs actual behavior, wanman version (commit SHA), Node version, and relevant env vars (`WANMAN_RUNTIME`, `WANMAN_URL`).
 - For PRs, describe the motivation, list the files touched, and link the issue if one exists.
 

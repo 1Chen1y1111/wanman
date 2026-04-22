@@ -1,5 +1,7 @@
 # Architecture
 
+**English** | [中文](architecture.zh.md) | [日本語](architecture.ja.md)
+
 This document is the tour a developer new to the wanman codebase should read first. It covers the shape of the supervisor, how agents are spawned and talk to each other, and where state lives.
 
 ## 1. System overview
