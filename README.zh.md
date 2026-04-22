@@ -92,8 +92,8 @@ Agent 定义集中在单个 JSON 文件中：
 ```json
 {
   "agents": [
-    { "name": "echo", "lifecycle": "24/7", "model": "haiku", "systemPrompt": "..." },
-    { "name": "ping", "lifecycle": "on-demand", "model": "haiku", "systemPrompt": "..." }
+    { "name": "echo", "lifecycle": "24/7", "model": "standard", "systemPrompt": "..." },
+    { "name": "ping", "lifecycle": "on-demand", "model": "standard", "systemPrompt": "..." }
   ],
   "dbPath": ".wanman/wanman.db",
   "port": 3120,
@@ -104,9 +104,19 @@ Agent 定义集中在单个 JSON 文件中：
 每条 agent 条目包含：
 - `name` —— 消息总线上使用的唯一标识。
 - `lifecycle` —— `24/7`（持续重生循环）或 `on-demand`（空闲直到被触发）。
-- `model` —— 透传给 runtime 适配器（Claude 或 Codex）。
+- `model` —— 通常使用抽象 tier（`high` 或 `standard`）；runtime 适配器会映射到 Claude 或 Codex 的默认模型，也可以通过环境变量覆盖。
 - `systemPrompt` —— 内置的角色设定/使命；agent 还会自动发现 `~/.claude/skills/` 下的共享 skill 文件。
 - 可选字段 `cron`、`events`、`tools` —— 完整 schema 见架构文档。
+
+## 测试
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm exec vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.exclude='**/dist/**'
+```
+
+当前覆盖率目标是行覆盖率至少 90%。最新一次本地验证结果为 `Lines: 90.17%`；机器可读的汇总会写入 `coverage/coverage-summary.json`。
 
 ## 项目结构
 

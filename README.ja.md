@@ -92,8 +92,8 @@ wanman takeover .
 ```json
 {
   "agents": [
-    { "name": "echo", "lifecycle": "24/7", "model": "haiku", "systemPrompt": "..." },
-    { "name": "ping", "lifecycle": "on-demand", "model": "haiku", "systemPrompt": "..." }
+    { "name": "echo", "lifecycle": "24/7", "model": "standard", "systemPrompt": "..." },
+    { "name": "ping", "lifecycle": "on-demand", "model": "standard", "systemPrompt": "..." }
   ],
   "dbPath": ".wanman/wanman.db",
   "port": 3120,
@@ -104,9 +104,19 @@ wanman takeover .
 エージェントエントリごとに以下のフィールドがあります:
 - `name` — メッセージバス上で使われる一意識別子です。
 - `lifecycle` — `24/7`（連続再生成ループ）または `on-demand`（トリガーがあるまでアイドル）。
-- `model` — runtime アダプタ（Claude または Codex）にそのまま渡されます。
+- `model` — 通常は抽象 tier（`high` または `standard`）を使います。runtime アダプタが Claude または Codex のデフォルトモデルに解決し、環境変数で上書きできます。
 - `systemPrompt` — 組み込みのペルソナ/ミッションです。エージェントは `~/.claude/skills/` にある共有 skill ファイルも自動検出します。
 - オプションの `cron`、`events`、`tools` フィールド — 完全なスキーマは architecture ドキュメントを参照してください。
+
+## Testing
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm exec vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.exclude='**/dist/**'
+```
+
+現在のカバレッジ目標は、行カバレッジ 90% 以上です。直近のローカル検証では `Lines: 90.17%` でした。機械可読のサマリーは `coverage/coverage-summary.json` に出力されます。
 
 ## プロジェクト構造
 

@@ -92,8 +92,8 @@ Agent definitions live in a single JSON file:
 ```json
 {
   "agents": [
-    { "name": "echo", "lifecycle": "24/7", "model": "haiku", "systemPrompt": "..." },
-    { "name": "ping", "lifecycle": "on-demand", "model": "haiku", "systemPrompt": "..." }
+    { "name": "echo", "lifecycle": "24/7", "model": "standard", "systemPrompt": "..." },
+    { "name": "ping", "lifecycle": "on-demand", "model": "standard", "systemPrompt": "..." }
   ],
   "dbPath": ".wanman/wanman.db",
   "port": 3120,
@@ -104,9 +104,19 @@ Agent definitions live in a single JSON file:
 Each agent entry has:
 - `name` — unique identifier used on the message bus.
 - `lifecycle` — `24/7` (continuous respawn loop) or `on-demand` (idle until triggered).
-- `model` — passed through to the runtime adapter (Claude or Codex).
+- `model` — usually an abstract tier (`high` or `standard`); the runtime adapter maps it to Claude or Codex defaults, with environment overrides available.
 - `systemPrompt` — baked-in persona/mission; agents also auto-discover shared skill files at `~/.claude/skills/`.
 - Optional `cron`, `events`, and `tools` fields — see the architecture doc for the full schema.
+
+## Testing
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm exec vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.exclude='**/dist/**'
+```
+
+The current coverage target is at least 90% line coverage. The latest verified local run reports `Lines: 90.17%`; the machine-readable summary is written to `coverage/coverage-summary.json`.
 
 ## Project structure
 
