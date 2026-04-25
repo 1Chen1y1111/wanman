@@ -64,8 +64,33 @@ start()
 
 - Initial state is `idle`; no CPU is spent until something pokes it.
 - A steer-priority message or a cron tick triggers a single execution, after which the agent falls back to `idle`.
+- Each spawn is stateless: the next trigger gets a fresh CLI session.
 
-### 2.3 Agent states
+### 2.3 `idle_cached` — idle, but with resumed context (Claude-only)
+
+```
+start()
+  +-> state = 'idle'           (no CLI subprocess running)
+  +-> lastSessionId = null
+
+trigger() / handleSteer()
+  +- relay.recv()
+  +- spawnClaudeCode({ resumeSessionId: lastSessionId })   # claude --resume <id>
+  +- onSessionId(id => lastSessionId = id)                 # captured from system/init
+  +- wait()
+  +- if resumeMissed():                                    # stale session
+       lastSessionId = null
+       respawn without --resume                            # cold-start fallback
+  +- state = 'idle' again      (but lastSessionId is preserved)
+```
+
+- Same idle CPU profile as `on-demand`, but conversation context survives idle periods because the next spawn passes the captured Claude `session_id` as `--resume <id>`.
+- The first trigger always cold-starts (no captured session yet).
+- If the local Claude CLI has dropped the session id (rotated, manually deleted, etc.), the runtime detects the failure via stderr + exit code, clears the cached id, and re-spawns once without `--resume`. No agent gets stranded.
+- Useful for stateful long-running roles where keeping a process alive forever would be wasteful but losing context every trigger is also wrong (e.g. a "support" agent that should remember the customer between messages).
+- **Claude-only.** The resume mechanism depends on `claude --resume` and Claude Code's `system/init` session id; Codex has no equivalent in this runtime today. Pairing `idle_cached` with `runtime: codex` (or letting `WANMAN_RUNTIME=codex` flip the effective runtime) is rejected at supervisor startup so the misconfig surfaces loudly instead of silently degrading to `on-demand` semantics.
+
+### 2.4 Agent states
 
 | State | Meaning |
 |-------|---------|
